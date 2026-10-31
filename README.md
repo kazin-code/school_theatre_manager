@@ -4,6 +4,19 @@ Inventory system for the Alton High School Theatre program: costumes, props, fur
 
 It runs entirely offline on one Windows computer. A single installer sets up the program, the database, the director's account and the shortcuts.
 
+## ⬇️ Download and install
+
+**[Download the installer (AHS-Theatre-Inventory-Setup.exe)](https://github.com/kazin-code/ahs_inventory/releases/latest/download/AHS-Theatre-Inventory-Setup.exe)**
+
+1. Click the link above. The file saves to your **Downloads** folder.
+2. Double-click **AHS-Theatre-Inventory-Setup.exe**.
+3. If Windows says *"Windows protected your PC"*, click **More info**, then **Run anyway**.
+4. Click **Yes** when Windows asks to allow changes.
+5. Follow the steps. When asked, create the director's username and password and write them down somewhere safe.
+6. Open **AHS Theatre Inventory** from the desktop shortcut and sign in.
+
+You need a Windows 10 or 11 computer and permission to install programs (if you don't have it, ask your school's IT department). Older versions are on the [Releases page](https://github.com/kazin-code/ahs_inventory/releases).
+
 ## What it does
 
 - **Inventory** — every item gets a tag number (e.g. `COS-0042`), photo, category, type, era, gender, size and body measurements, color, material, quantity, storage location, condition (1–5) and value.
