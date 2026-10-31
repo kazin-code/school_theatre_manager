@@ -18,7 +18,7 @@ import (
 const (
 	productName = "School Theatre Manager"
 	appID       = "school-theatre-manager"
-	appVersion  = "2.0.0"
+	appVersion  = "2.2.0"
 )
 
 //go:embed web
@@ -60,7 +60,7 @@ func loadConfig() {
 }
 
 func prepareDataDir() error {
-	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "showfiles"), filepath.Join(dataDir, "branding"), filepath.Join(dataDir, "backups")} {
+	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "showfiles"), filepath.Join(dataDir, "sponsors"), filepath.Join(dataDir, "branding"), filepath.Join(dataDir, "backups")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("could not create %s: %w", d, err)
 		}
@@ -183,6 +183,7 @@ func main() {
 	}
 	logf("started v%s on %s, data %s", appVersion, ln.Addr(), dataDir)
 	go autoBackup()
+	go pruneTrash()
 	if cfg.MirrorFolder != "" {
 		go func() {
 			time.Sleep(20 * time.Second)

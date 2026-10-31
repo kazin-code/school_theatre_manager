@@ -106,7 +106,7 @@ func syncNow() error {
 		if _, err := os.Stat(cfg.MirrorFolder); err != nil {
 			return fmt.Errorf("The cloud folder %s can't be reached. Is OneDrive/Google Drive signed in?", cfg.MirrorFolder)
 		}
-		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos"), filepath.Join(root, "showfiles"), filepath.Join(root, "branding")} {
+		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos"), filepath.Join(root, "showfiles"), filepath.Join(root, "sponsors"), filepath.Join(root, "branding")} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				return err
 			}
@@ -145,7 +145,7 @@ func syncNow() error {
 			}
 		}
 		// photos and show files: copy any that aren't there yet
-		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir()} {
+		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir(), "sponsors": sponsorDir()} {
 			ents, _ := os.ReadDir(local)
 			for _, e := range ents {
 				dst := filepath.Join(root, sub, e.Name())
@@ -335,7 +335,7 @@ func apiRestore(w http.ResponseWriter, r *http.Request) {
 	initSchema()
 	restored := 0
 	if str(b["source"]) == "cloud" {
-		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir()} {
+		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir(), "sponsors": sponsorDir()} {
 			os.MkdirAll(local, 0o755)
 			ents, _ := os.ReadDir(filepath.Join(mirrorRoot(), sub))
 			for _, e := range ents {
@@ -356,6 +356,7 @@ func apiRestore(w http.ResponseWriter, r *http.Request) {
 		}
 		loadBranding()
 	}
+	restored += recoverFromTrash()
 	logActivity(who, "backup", fmt.Sprintf("Restored database from %s backup %s (safety copy: %s)", str(b["source"]), name, safety))
 	jout(w, map[string]any{"ok": true, "photos": restored, "safety": safety})
 }

@@ -24,6 +24,9 @@ const ICON = {
   list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
   hanger: '<path d="M12 7a2 2 0 1 1 2-2"/><path d="M12 7v1.5L3 15h18l-9-6.5"/><path d="M3 15v2h18v-2"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
+  program: '<path d="M6 3h9l3 3v15H6z"/><path d="M15 3v3h3"/><path d="M9 11h6M9 14h6M9 17h4"/>',
+  archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
   upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
   camera: '<path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/>',
 };
@@ -110,7 +113,7 @@ const photoURL = (p) => p ? "/photos/" + encodeURIComponent(p) : "";
 const thumb = (p) => p ? h`<img class="thumb" src="${photoURL(p)}" alt="" loading="lazy">` : h`<span class="thumb ph">${icon("hanger")}</span>`;
 const tag = (t) => t ? h`<span class="tag">${t}</span>` : "";
 const showLabel = (s) => [s.season, s.year].filter(Boolean).join(" ");
-const SHOWSTATUS = { planning: ["Planning", "info"], "in production": ["In production", "warn"], closed: ["Closed", "mute"] };
+const SHOWSTATUS = { planning: ["Planning", "info"], "in production": ["In production", "warn"], closed: ["Past show", "mute"] };
 const showPill = (st) => { const [t, c] = SHOWSTATUS[st] || [st, "mute"]; return h`<span class="pill ${c}">${t}</span>`; };
 
 // ---------- toast & modal ----------
@@ -163,14 +166,14 @@ const datalists = () => Object.entries(S.lists).map(([k, vals]) => h`<datalist i
 
 // ---------- shell ----------
 const NAV = [
-  ["dashboard", "Dashboard", "home"], ["items", "Inventory", "box"], ["shows", "Shows", "mask"], ["rentals", "Rentals", "swap"], ["renters", "Renters", "users"],
+  ["dashboard", "Dashboard", "home"], ["items", "Inventory", "box"], ["shows", "Current shows", "mask"], ["past-shows", "Past shows", "archive"], ["rentals", "Rentals", "swap"], ["renters", "Renters", "users"], ["sponsors", "Sponsors", "star"],
   null, ["pull", "Pull list", "list"], ["activity", "Activity log", "clock"], ["settings", "Settings", "gear"],
 ];
 function shell(active, content) {
   const pullN = S.pull.length;
   $("#app").innerHTML = h`<div class="shell">
     <aside class="side no-print">
-      <div class="brand"><img src="${logoURL()}" alt="${BN()} logo"><div><b>${BN()}</b><span>${S.brand.school && S.brand.school !== BN() ? S.brand.school : "Theatre Manager"}</span></div></div>
+      <div class="brand"><img src="${logoURL()}" alt="${BN()} logo"><div><b>${BN()}</b>${S.brand.school && S.brand.school !== BN() ? h`<span>${S.brand.school}</span>` : ""}</div></div>
       <nav class="nav">${NAV.map((n) => n ? h`<a href="#/${n[0]}" class="${active === n[0] ? "on" : ""}">${icon(n[2])}${n[1]}${n[0] === "pull" ? h`<span class="badge" id="pullbadge" ${pullN ? "" : raw("hidden")}>${pullN}</span>` : ""}${n[0] === "rentals" && S.overdue ? h`<span class="badge">${S.overdue} late</span>` : ""}</a>` : h`<div class="sep"></div>`)}</nav>
       <div class="who"><div><b>${S.me.display_name || S.me.username}</b>${S.me.role === "director" ? "Director" : "Assistant"}</div><button id="signout">Sign out</button></div>
     </aside>
@@ -284,8 +287,12 @@ const ROUTES = [
   [/^#\/rental\/(\d+)$/, (m) => viewRental(+m[1])],
   [/^#\/shows$/, viewShows],
   [/^#\/shows\/new$/, () => viewShowForm(null)],
+  [/^#\/past-shows$/, viewPastShows],
+  [/^#\/past-shows\/new$/, () => viewShowForm(null, true)],
   [/^#\/show\/(\d+)$/, (m) => viewShow(+m[1])],
+  [/^#\/show\/(\d+)\/program$/, (m) => viewProgram(+m[1])],
   [/^#\/show\/(\d+)\/(people|numbers|materials|photos)$/, (m) => viewShow(+m[1], m[2])],
+  [/^#\/sponsors$/, () => viewSponsors()],
   [/^#\/show\/(\d+)\/edit$/, (m) => viewShowForm(+m[1])],
   [/^#\/pull$/, viewPull],
   [/^#\/activity$/, viewActivity],
@@ -342,7 +349,7 @@ async function viewDashboard() {
     <div class="two">
       <div class="stack">
         <section class="panel"><header><h2>Current shows</h2><a class="more" href="#/shows">All shows</a></header>
-          ${d.shows.length ? h`<div class="tablewrap"><table><tr><th>Show</th><th>Opens</th><th class="r">Pieces out</th></tr>${d.shows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td><b>${s.title}</b><div class="small muted">${[s.type, showLabel(s)].filter(Boolean).join(" · ")}</div></td><td class="num">${fmtDate(s.open_date)}</td><td class="r num">${s.out_pieces || 0}</td></tr>`)}</table></div>`
+          ${d.shows.length ? h`<div class="tablewrap"><table><tr><th>Show</th><th>Opens</th><th class="r">Pieces out</th></tr>${d.shows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td style="display:flex;gap:10px;align-items:center">${s.cover ? h`<img class="thumb cov" src="${showFileURL(s.cover)}" alt="" loading="lazy">` : h`<span class="thumb ph">${icon("mask")}</span>`}<span><b>${s.title}</b><div class="small muted">${[s.type, showLabel(s)].filter(Boolean).join(" · ")}</div></span></td><td class="num">${fmtDate(s.open_date)}</td><td class="r num">${s.out_pieces || 0}</td></tr>`)}</table></div>`
             : h`<div class="empty">No shows in planning or production. <a href="#/shows/new">Create the next show</a> to start checking items out to it.</div>`}
         </section>
         <section class="panel"><header><h2>Out on rental</h2><a class="more" href="#/rentals">All rentals</a></header>
@@ -1061,25 +1068,88 @@ const numberLabel = (n) => [n.act ? "Act " + n.act : "", (n.number ? n.number + 
 let SQ = { q: "", status: "" };
 async function viewShows() {
   shell("shows", h`
-    ${page("Productions", "Shows", h`<a class="btn" href="/api/export/shows.csv">Export pieces used</a><a class="btn" href="/api/export/people.csv">Export cast &amp; crew</a><a class="btn primary" href="#/shows/new">${icon("plus")}Create a show</a>`)}
-    <p class="muted" style="max-width:70ch;margin-top:-8px">Each show keeps its production team, cast and crew, scripts and other materials, photos, and a permanent record of every costume and prop checked out to it.</p>
-    <div class="searchbar"><div class="q">${icon("search")}<input type="search" id="s-q" placeholder="Search by title, director, season or year" value="${SQ.q}"></div>
-      <select id="s-st" style="width:auto">${[["", "All shows"], ["planning", "Planning"], ["in production", "In production"], ["closed", "Closed"]].map(([v, t]) => h`<option value="${v}" ${SQ.status === v ? raw("selected") : ""}>${t}</option>`)}</select></div>
+    ${page("Productions", "Current shows", h`<a class="btn" href="#/past-shows">${icon("archive")}Past shows</a><a class="btn primary" href="#/shows/new">${icon("plus")}Create a show</a>`)}
+    <p class="muted" style="max-width:70ch;margin-top:-8px">Shows in planning or production. When a show closes, move it to <a href="#/past-shows">Past shows</a>, where its cast, crew, materials, photos and every costume and prop it used are kept.</p>
+    <div id="closing"></div>
+    <div class="searchbar"><div class="q">${icon("search")}<input type="search" id="s-q" placeholder="Search current shows by title, director or season" value="${SQ.q}"></div>
+      <select id="s-st" style="width:auto">${[["current", "Planning & in production"], ["planning", "Planning"], ["in production", "In production"]].map(([v, t]) => h`<option value="${v}" ${(SQ.status || "current") === v ? raw("selected") : ""}>${t}</option>`)}</select></div>
     <div id="slist"></div>`);
   let t;
   const run = async () => {
-    const rows = await GET("/api/shows" + qs(SQ));
-    $("#slist").innerHTML = rows.length ? h`<section class="panel tablewrap"><table><tr><th></th><th>Show</th><th>Season</th><th>Director</th><th>Run</th><th>Status</th><th class="r">Cast</th><th class="r">Pieces used</th><th class="r">Still out</th></tr>
-      ${rows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td>${s.cover ? h`<img class="thumb" src="${showFileURL(s.cover)}" alt="" loading="lazy">` : h`<span class="thumb ph">${icon("mask")}</span>`}</td>
+    const rows = await GET("/api/shows" + qs({ q: SQ.q, status: SQ.status || "current" }));
+    const ended = rows.filter((s) => s.close_date && s.close_date < todayISO());
+    $("#closing").innerHTML = ended.length && !SQ.q ? h`<div class="note">${ended.length === 1 ? h`<b>${ended[0].title}</b> closed on ${fmtDate(ended[0].close_date)}.` : h`${ended.length} shows have passed their closing date.`} Move ${ended.length === 1 ? "it" : "them"} to Past shows to keep this list tidy.
+      ${ended.map((s) => h` <button type="button" class="btn sm" data-arch="${s.id}">Move ${s.title} to past</button>`)}</div>`.s : "";
+    $("#slist").innerHTML = rows.length ? h`<section class="panel tablewrap"><table><tr><th></th><th>Show</th><th>Season</th><th>Director</th><th>Run</th><th>Status</th><th class="r">Cast</th><th class="r">Pieces out</th><th></th></tr>
+      ${rows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td>${s.cover ? h`<img class="thumb cov" src="${showFileURL(s.cover)}" alt="" loading="lazy">` : h`<span class="thumb ph">${icon("mask")}</span>`}</td>
         <td><b>${s.title}</b><div class="small muted">${[s.type, s.photo_count ? `${s.photo_count} photos` : "", s.material_count ? `${s.material_count} materials` : ""].filter(Boolean).join(" · ")}</div></td><td>${showLabel(s)}</td><td>${s.director || ""}</td>
-        <td class="num small">${s.open_date ? fmtDate(s.open_date) + (s.close_date ? " – " + fmtDate(s.close_date) : "") : "—"}</td><td>${showPill(s.status)}</td><td class="r num">${s.cast_count || ""}</td><td class="r num">${s.pieces || 0}</td><td class="r num">${s.out_pieces || ""}</td></tr>`)}</table></section>`.s
-      : h`<div class="panel"><div class="empty">${SQ.q || SQ.status ? "No shows match." : h`No shows yet. <a href="#/shows/new">Create the spring play</a> to add its cast, crew and materials and check out costumes for it.`}</div></div>`.s;
+        <td class="num small">${s.open_date ? fmtDate(s.open_date) + (s.close_date ? " – " + fmtDate(s.close_date) : "") : "—"}</td><td>${showPill(s.status)}</td><td class="r num">${s.cast_count || ""}</td><td class="r num">${s.out_pieces || ""}</td>
+        <td class="r"><button type="button" class="btn sm" data-arch="${s.id}" title="Move to past shows">${icon("archive")}Move to past</button></td></tr>`)}</table></section>`.s
+      : h`<div class="panel"><div class="empty">${SQ.q ? "No current shows match." : h`No current shows. <a href="#/shows/new">Create the next show</a> to add its cast, crew and materials and check out costumes for it.`}</div></div>`.s;
     bindRows($("#slist"));
+    $$("[data-arch]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); const sh = rows.find((x) => x.id === +b.dataset.arch); moveToPast(sh, run); }));
   };
   $("#s-q").oninput = (e) => { SQ.q = e.target.value; clearTimeout(t); t = setTimeout(run, 200); };
   $("#s-st").onchange = (e) => { SQ.status = e.target.value; run(); };
   run();
 }
+
+// Past shows: the archive, grouped by year, newest first.
+let PQ = { q: "", type: "" };
+async function viewPastShows() {
+  shell("past-shows", h`
+    ${page("Archive", "Past shows", h`<a class="btn" href="/api/export/shows.csv">Export pieces used</a><a class="btn" href="/api/export/people.csv">Export cast &amp; crew</a><a class="btn" href="#/past-shows/new">${icon("plus")}Add a past show</a>`)}
+    <p class="muted" style="max-width:70ch;margin-top:-8px">Every finished production with its cast, crew, songs, materials, photos and the costumes and props it used. Use <b>Add a past show</b> to record productions from before you started using the program.</p>
+    <div class="searchbar"><div class="q">${icon("search")}<input type="search" id="p-q" placeholder="Search past shows by title, director, season or year" value="${PQ.q}"></div>
+      <select id="p-ty" style="width:auto"><option value="">All types</option>${(S.lists.show_type || []).map((t) => h`<option ${PQ.type === t ? raw("selected") : ""}>${t}</option>`)}</select></div>
+    <div id="plist"></div>`);
+  let t;
+  const run = async () => {
+    let rows = await GET("/api/shows" + qs({ q: PQ.q, status: "past" }));
+    if (PQ.type) rows = rows.filter((s) => (s.type || "") === PQ.type);
+    const yearOf = (s) => s.year || (s.open_date || s.close_date || "").slice(0, 4) || "Undated";
+    const groups = []; rows.forEach((s) => { const y = String(yearOf(s)); let g = groups.find((x) => x[0] === y); if (!g) groups.push((g = [y, []])); g[1].push(s); });
+    $("#plist").innerHTML = rows.length ? groups.map(([y, ss]) => h`<section class="pastyear"><h2>${y}</h2><div class="pastgrid">${ss.map((s) => h`<a class="pastcard" href="#/show/${s.id}">
+        <div class="pc-img">${s.cover ? h`<img src="${showFileURL(s.cover)}" alt="" loading="lazy">` : icon("mask")}</div>
+        <div class="pc-b"><b>${s.title}</b><div class="small muted">${[s.type, s.season, s.director ? "dir. " + s.director : ""].filter(Boolean).join(" · ")}</div>
+          <div class="small">${[s.cast_count ? `${s.cast_count} cast` : "", s.crew_count ? `${s.crew_count} team & crew` : "", s.pieces ? `${s.pieces} pieces used` : "", s.photo_count ? `${s.photo_count} photos` : ""].filter(Boolean).join(" · ") || h`<span class="muted">No details yet</span>`}</div>
+          ${s.out_pieces ? h`<span class="pill warn">${s.out_pieces} still checked out</span>` : ""}</div></a>`)}</div></section>`).join("")
+      : h`<div class="panel"><div class="empty">${PQ.q || PQ.type ? "No past shows match." : h`No past shows yet. When a current show closes, use <b>Move to past</b>. To record an older production, <a href="#/past-shows/new">add a past show</a>.`}</div></div>`.s;
+  };
+  $("#p-q").oninput = (e) => { PQ.q = e.target.value; clearTimeout(t); t = setTimeout(run, 200); };
+  $("#p-ty").onchange = (e) => { PQ.type = e.target.value; run(); };
+  run();
+}
+
+// Move a show to Past shows. Offers to check in anything still out.
+function moveToPast(s, after) {
+  const out = s.out_pieces || 0;
+  modal({ title: `Move ${s.title} to past shows?`, ok: "Move to past shows",
+    body: h`<p style="margin-top:0">The show and everything recorded for it (cast, crew, songs, materials, photos and the costumes and props it used) moves to <b>Past shows</b>. You can still add photos or notes, or move it back later.</p>
+      ${out ? h`<div class="note"><b>${out} piece${out === 1 ? " is" : "s are"} still checked out</b> to this show.</div>
+        <label class="check"><input type="checkbox" id="mp-ret" checked> Check ${out === 1 ? "it" : "them"} back in now, keeping each item's current condition</label>
+        <p class="small muted">To record damage or alterations piece by piece, cancel and use <b>Return items</b> on the show's page first.</p>` : ""}
+      <div class="grid" style="margin-top:10px">${fld(out ? "Returned and closed on" : "Closed on", dateInp("mp_date", s.close_date && s.close_date <= todayISO() ? s.close_date : todayISO()))}</div>`,
+    onOk: async (f) => { const r = await api("POST", `/api/shows/${s.id}/archive`, { return_items: !!($("#mp-ret", f) && $("#mp-ret", f).checked), date: $("#f-mp_date", f).value });
+      toast(`${s.title} moved to past shows${r.returned ? `; ${r.returned} piece${r.returned === 1 ? "" : "s"} checked in` : ""}`); after ? after() : viewShow(s.id); } });
+}
+
+// Delete a show entirely (for example, a cancelled production). Director only; typed confirmation.
+function deleteShowModal(s, counts) {
+  const out = counts.out || 0;
+  const f = modal({ title: `Delete ${s.title}?`, ok: "Delete show", okClass: "danger-solid",
+    body: h`<p style="margin-top:0">Use this for a show that was cancelled or created by mistake. This removes the show along with its production team, cast and crew${counts.numbers ? ", musical numbers" : ""}, materials, photos and its record of costumes and props${out ? h`, and puts the <b>${out} piece${out === 1 ? "" : "s"} still checked out</b> back on the shelf` : ""}.</p>
+      <p class="small muted">To keep a finished show's history, use <b>Move to past shows</b> instead. A backup is saved before deleting, so a mistake can be undone from Settings → Backups within 60 days.</p>
+      ${fld("Reason (optional)", h`<input type="text" id="ds-why" placeholder="e.g. Cancelled: rights not granted">`)}
+      <div style="margin-top:12px">${fld(raw(`Type <b>${esc(s.title)}</b> to confirm`), h`<input type="text" id="ds-confirm" autocomplete="off">`)}</div>`,
+    onOk: async (form) => { const r = await api("DELETE", "/api/shows/" + s.id, { confirm: $("#ds-confirm", form).value, reason: $("#ds-why", form).value });
+      toast(`${s.title} deleted${r.returned ? `; ${r.returned} piece${r.returned === 1 ? "" : "s"} back on the shelf` : ""}`); location.hash = "#/shows"; } });
+  const btn = $("footer .btn:last-child", f), inp = $("#ds-confirm", f);
+  const norm = (x) => x.trim().replace(/\s+/g, " ").toLowerCase();
+  const check = () => (btn.disabled = norm(inp.value) !== norm(s.title));
+  inp.addEventListener("input", check); check();
+}
+
 const showFileURL = (f, dl) => "/files/show/" + encodeURIComponent(f) + (dl ? "?download=1" : "");
 
 // ---- reading pasted or uploaded cast & crew lists ----
@@ -1166,13 +1236,15 @@ function teamForm(box, rows) {
   return () => rows.filter((r) => (r.name || "").trim()).map((r) => ({ kind: "team", role: r.role, name: r.name, email: r.email, phone: r.phone }));
 }
 
-async function viewShowForm(id) {
+async function viewShowForm(id, past) {
   const y = new Date().getFullYear();
-  let s = { status: "planning", year: y, type: "Play", director: S.me.display_name || "" };
+  let s = { status: past ? "closed" : "planning", year: past ? y - 1 : y, type: "Play", director: past ? "" : S.me.display_name || "" };
   if (id) s = (await GET("/api/shows/" + id)).show;
   const posDL = lookupDLs();
-  shell("shows", h`
-    ${page("Shows", id ? "Edit " + s.title : "Create a show", "", id ? h`<a href="#/shows">Shows</a> / <a href="#/show/${id}">${s.title}</a>` : h`<a href="#/shows">Shows</a>`)}
+  const listKey = s.status === "closed" ? "past-shows" : "shows", listName = s.status === "closed" ? "Past shows" : "Current shows";
+  shell(listKey, h`
+    ${page(listName, id ? "Edit " + s.title : past ? "Add a past show" : "Create a show", "", id ? h`<a href="#/${listKey}">${listName}</a> / <a href="#/show/${id}">${s.title}</a>` : h`<a href="#/${listKey}">${listName}</a>`)}
+    ${past ? h`<p class="muted" style="max-width:70ch;margin-top:-8px">Record a production from before you started using the program. Add its cast, crew, materials and photos now or later, and link costumes and props from the show's page.</p>` : ""}
     <form id="showf" novalidate><div class="errbox" hidden></div>
       <fieldset><legend>Production</legend><div class="grid">
         ${fld("Title *", inp("title", s, 'placeholder="e.g. Little Shop of Horrors"'), "wide")}
@@ -1182,10 +1254,12 @@ async function viewShowForm(id) {
         ${fld("Director", inp("director", s))}
         ${fld("Venue", inp("venue", s, 'placeholder="e.g. School auditorium"'))}
         ${fld("Opening", dateInp("open_date", s.open_date))}${fld("Closing", dateInp("close_date", s.close_date))}
-        ${fld("Status", sel("status", [["planning", "Planning"], ["in production", "In production"], ["closed", "Closed"]], s.status))}
+        ${fld("Status", sel("status", [["planning", "Planning"], ["in production", "In production"], ["closed", "Past show"]], s.status))}
         ${fld("Notes", area("notes", s, 3), "full")}
       </div></fieldset>
       ${id ? h`<p class="note">Production team, cast, crew, materials and photos are managed on the <a href="#/show/${id}">show's page</a>.</p>` : h`
+      <fieldset><legend>Cover image</legend><p class="hint" style="margin:-6px 0 10px">The show's title artwork, logo or poster, often supplied by the licensing company. It appears on the show's page and in the show lists.</p>
+        <div class="coverpick"><div class="coverbox" id="newcover">${icon("mask")}<span class="small muted">No cover yet</span></div><div id="coverdrop" style="flex:1;min-width:220px"></div></div></fieldset>
       <fieldset><legend>Production team</legend><p class="hint" style="margin:-6px 0 10px">Fill in whoever is set. You can add or change people later.</p><div id="teambox"></div></fieldset>
       <fieldset><legend>Cast</legend><div id="castbox"></div><p class="hint musonly" style="margin:8px 0 0">For a musical, add a voice part as a third column (e.g. “Jane Doe – Audrey – Soprano”), or set it later on the show's page.</p></fieldset>
       <fieldset class="musonly"><legend>Musical numbers</legend><div id="numbox"></div></fieldset>
@@ -1196,10 +1270,10 @@ async function viewShowForm(id) {
         <div id="matdrop"></div><div id="matlist" class="filelist"></div></fieldset>
       <fieldset><legend>Show photos</legend><div id="photodrop"></div><div id="photolist" class="pgrid" style="margin-top:10px"></div></fieldset>`}
       ${posDL}
-      <div class="formbar"><span class="small muted" id="savestatus" aria-live="polite"></span><a class="btn ghost" href="${id ? "#/show/" + id : "#/shows"}">Cancel</a>${id && isDirector() ? h`<button type="button" class="btn danger" id="delshow">Delete show</button>` : ""}<button class="btn primary" id="savebtn">${id ? "Save changes" : "Create show"}</button></div>
+      <div class="formbar"><span class="small muted" id="savestatus" aria-live="polite"></span><a class="btn ghost" href="${id ? "#/show/" + id : "#/" + listKey}">Cancel</a>${id && isDirector() ? h`<button type="button" class="btn danger" id="delshow">Delete show</button>` : ""}<button class="btn primary" id="savebtn">${id ? "Save changes" : past ? "Add past show" : "Create show"}</button></div>
     </form>`);
   const f = $("#showf");
-  let getTeam, getCast, getCrew, getPit, getNums; const mats = [], pics = [];
+  let getTeam, getCast, getCrew, getPit, getNums, coverFile = null; const mats = [], pics = [];
   const musical = (t) => $$(".musonly", f).forEach((el) => (el.hidden = !isMusical(t)));
   bindTypePicker(f, musical); musical(s.type || "Play");
   if (!id) {
@@ -1212,6 +1286,10 @@ async function viewShowForm(id) {
       $$("[data-rmm]").forEach((b) => (b.onclick = () => { mats.splice(+b.dataset.rmm, 1); drawMats(); })); };
     const drawPics = () => { $("#photolist").innerHTML = pics.map((p, i) => h`<figure><img src="${p.url}" alt=""><button type="button" class="btn sm" data-rmp="${i}">Remove</button></figure>`.s).join("");
       $$("[data-rmp]").forEach((b) => (b.onclick = () => { URL.revokeObjectURL(pics[+b.dataset.rmp].url); pics.splice(+b.dataset.rmp, 1); drawPics(); })); };
+    dropzone($("#coverdrop"), { accept: "image/jpeg,image/png,image/webp,image/gif", label: "Choose a cover image", sub: "Click to choose, or drag the artwork here. JPG, PNG, WEBP or GIF.",
+      onFiles: (files) => { const img = files.find(isImage); if (!img) { toast("The cover must be a picture: JPG, PNG, WEBP or GIF.", true); return; }
+        coverFile = img; $("#newcover").innerHTML = h`<img src="${URL.createObjectURL(img)}" alt="Cover preview"><button type="button" class="btn sm" id="nocover">Remove</button>`.s;
+        $("#nocover").onclick = (e) => { e.stopPropagation(); coverFile = null; $("#newcover").innerHTML = h`${icon("mask")}<span class="small muted">No cover yet</span>`.s; }; } });
     dropzone($("#matdrop"), { label: "Add materials", sub: "Click to choose files, or drag them here.", onFiles: (files) => { files.forEach((file) => mats.push({ file, category: $("#mat-cat").value.trim() })); drawMats(); } });
     dropzone($("#photodrop"), { accept: "image/jpeg,image/png,image/webp,image/gif", label: "Add photos", sub: "Rehearsals, the set, the cast, opening night. Click or drag pictures here.",
       onFiles: (files) => { files.filter(isImage).forEach((file) => pics.push({ file, url: URL.createObjectURL(file) })); drawPics(); } });
@@ -1236,6 +1314,7 @@ async function viewShowForm(id) {
       if (nums.length) { st.textContent = `Adding ${nums.length} musical numbers…`; await api("POST", `/api/shows/${showId}/numbers`, { numbers: nums }); }
       const byCat = {}; mats.forEach((m) => (byCat[m.category] ||= []).push(m.file));
       for (const [category, files] of Object.entries(byCat)) await uploadAll(`/api/shows/${showId}/files?kind=material`, "file", files, { extra: { category }, status: st });
+      if (coverFile) { st.textContent = "Uploading the cover image…"; const fd = new FormData(); fd.append("file", await shrinkImage(coverFile, 2000)); await api("POST", `/api/shows/${showId}/cover`, fd); }
       if (pics.length) await uploadAll(`/api/shows/${showId}/files?kind=photo`, "file", pics.map((p) => p.file), { photos: true, status: st });
       toast(`Created ${d.title}`); location.hash = "#/show/" + showId;
     } catch (err) {
@@ -1244,7 +1323,7 @@ async function viewShowForm(id) {
       else { eb.textContent = err.message; eb.hidden = false; window.scrollTo(0, 0); }
     }
   };
-  if ($("#delshow")) $("#delshow").onclick = () => confirmBox("Delete this show?", "Only shows with no costumes or props on record can be deleted. Its cast, crew, materials and photos are deleted too. To keep a finished show's history, mark it Closed instead.", "Delete show", async () => { await api("DELETE", "/api/shows/" + id); location.hash = "#/shows"; });
+  if ($("#delshow")) $("#delshow").onclick = async () => { const d = await GET("/api/shows/" + id); deleteShowModal(s, { out: d.items.filter((l) => !l.date_returned).reduce((a, l) => a + l.qty, 0), numbers: d.numbers.length }); };
 }
 
 const FILEKIND = [[/\.pdf$/i, "PDF"], [/\.(docx?|odt|rtf|pages)$/i, "DOC"], [/\.(xlsx?|ods|csv|numbers)$/i, "XLS"], [/\.(pptx?|odp|key)$/i, "PPT"], [/\.(mp3|wav|m4a|aac|ogg|flac|aiff?)$/i, "AUDIO"],
@@ -1270,12 +1349,19 @@ async function viewShow(id, tab) {
   S.showMusical = mus;
   const tabs = [["pieces", `Costumes & props (${items.length})`], ["people", `Cast & crew (${people.length})`], ...(mus ? [["numbers", `Musical numbers (${d.numbers.length})`]] : []), ["materials", `Materials (${d.materials.length})`], ["photos", `Photos (${d.photos.length})`]];
   if (SHOW_TAB === "numbers" && !mus) SHOW_TAB = "pieces";
-  shell("shows", h`
+  const isPast = s.status === "closed";
+  shell(isPast ? "past-shows" : "shows", h`
     ${page([s.type, showLabel(s)].filter(Boolean).join(" · ") || "Show", s.title, h`
       <button class="btn" id="printpull">${icon("print")}Print</button>
       ${outLines.length ? h`<button class="btn dark" id="returnbtn">Return items (${outLines.length})</button>` : ""}
-      <a class="btn" href="#/show/${id}/edit">Edit show</a>`, h`<a href="#/shows">Shows</a>`)}
-    <div class="showhead">${s.cover ? h`<img class="cover" src="${showFileURL(s.cover)}" alt="" id="coverimg">` : ""}
+      ${isPast ? h`<button class="btn" id="reopen">Move back to current shows</button>` : h`<button class="btn" id="archive">${icon("archive")}Move to past shows</button>`}
+      <a class="btn primary" href="#/show/${id}/program">${icon("program")}Program</a>
+      <a class="btn" href="#/show/${id}/edit">Edit show</a>`, isPast ? h`<a href="#/past-shows">Past shows</a>` : h`<a href="#/shows">Current shows</a>`)}
+    ${isPast ? h`<div class="note no-print">This is a past show${s.close_date ? `, closed ${fmtDate(s.close_date)}` : ""}. Its record is kept as history. You can still add photos, materials or notes.${outLines.length ? h` <b>${outLines.reduce((a, l) => a + l.qty, 0)} piece(s) are still checked out</b>; use Return items to check them in.` : ""}</div>` : ""}
+    <div class="showhead"><div class="coverwrap">
+        <button type="button" class="coverbox ${s.cover ? "has" : ""}" id="coverimg" aria-label="${s.cover ? "View the cover image" : "Add a cover image"}">${s.cover ? h`<img src="${showFileURL(s.cover)}" alt="${s.title} cover">` : h`${icon("upload")}<span class="small">Add a cover image</span>`}</button>
+        <input type="file" id="coverfile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+        ${s.cover ? h`<div class="coveract no-print"><button type="button" class="btn sm" id="coverchange">Change cover</button><button type="button" class="btn sm ghost" id="coverremove">Remove</button></div>` : ""}</div>
       <div class="avail" style="margin:0;flex:1">${showPill(s.status)}
         <span class="small">${s.director ? "Directed by " + s.director : ""}${s.open_date ? ` · ${fmtDate(s.open_date)}${s.close_date ? " – " + fmtDate(s.close_date) : ""}` : ""}${s.venue ? " · " + s.venue : ""}</span>
         <span class="small muted" style="margin-left:auto">${mus && d.numbers.length ? `${d.numbers.length} musical numbers · ` : ""}${cast.length} in the cast · ${people.length - cast.length} on the team${mus ? ", pit" : ""} &amp; crew · ${pieces} piece${pieces === 1 ? "" : "s"} used${outLines.length ? ` · ${outLines.reduce((a, l) => a + l.qty, 0)} still out` : ""}</span></div></div>
@@ -1285,10 +1371,20 @@ async function viewShow(id, tab) {
     <datalist id="dl-scenes">${d.numbers.map((n) => h`<option value="${numberLabel(n)}">`)}</datalist>
     ${lookupDLs()}
     <div class="tabs bigtabs no-print" role="tablist">${tabs.map(([k, t]) => h`<button type="button" data-stab="${k}" class="${SHOW_TAB === k ? "on" : ""}" role="tab" aria-selected="${SHOW_TAB === k}">${t}</button>`)}</div>
-    <div id="stab"></div>`);
+    <div id="stab"></div>
+    ${isDirector() ? h`<p class="no-print" style="margin-top:28px"><button class="btn sm danger" id="delshowpage">Delete this show</button> <span class="small muted">For cancelled shows. Finished shows belong in Past shows.</span></p>` : ""}`);
+  if ($("#archive")) $("#archive").onclick = () => moveToPast({ ...s, out_pieces: outLines.reduce((a, l) => a + l.qty, 0) });
+  if ($("#reopen")) $("#reopen").onclick = () => confirmBox(`Move ${s.title} back to current shows?`, "It will appear under Current shows again, so you can check out more costumes and props for it.", "Move back", async () => { await api("POST", `/api/shows/${id}/reopen`); toast("Moved back to current shows"); viewShow(id); });
+  if ($("#delshowpage")) $("#delshowpage").onclick = () => deleteShowModal(s, { out: outLines.reduce((a, l) => a + l.qty, 0), numbers: d.numbers.length });
   $$("[data-stab]").forEach((b) => (b.onclick = () => { SHOW_TAB = b.dataset.stab; $$("[data-stab]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); }); drawTab(); }));
   $("#printpull").onclick = () => window.print();
-  if ($("#coverimg")) $("#coverimg").onclick = () => lightbox(d.photos.map((p) => ({ src: showFileURL(p.file), caption: p.caption })), Math.max(0, d.photos.findIndex((p) => p.file === s.cover)));
+  const pickCover = () => $("#coverfile").click();
+  $("#coverimg").onclick = () => { if (!s.cover) return pickCover(); const inGallery = d.photos.findIndex((p) => p.file === s.cover);
+    lightbox(inGallery >= 0 ? d.photos.map((p) => ({ src: showFileURL(p.file), caption: p.caption })) : [{ src: showFileURL(s.cover), caption: s.title + " — cover" }], Math.max(0, inGallery)); };
+  $("#coverfile").onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+    try { const fd = new FormData(); fd.append("file", await shrinkImage(f, 2000)); await api("POST", `/api/shows/${id}/cover`, fd); toast("Cover image updated"); viewShow(id); } catch (err) { toast(err.message, true); } };
+  if ($("#coverchange")) $("#coverchange").onclick = pickCover;
+  if ($("#coverremove")) $("#coverremove").onclick = () => confirmBox("Remove the cover image?", "The show will appear without a cover until you add one. Gallery photos aren't affected.", "Remove cover", async () => { await api("DELETE", `/api/shows/${id}/cover`); toast("Cover removed"); viewShow(id); });
   if ($("#returnbtn")) $("#returnbtn").onclick = () => returnModal(id, s, outLines);
   const reload = () => viewShow(id);
   const drawTab = () => {
@@ -1310,7 +1406,7 @@ function showPiecesTab(box, id, s, items, staged, chars, reload) {
       <div id="stlines"></div>
       <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 14px">${fld("Date checked out", dateInp("co_date", todayISO()))}<button type="button" class="btn primary" id="cobtn">Check out to ${s.title}</button>
         <a class="btn ghost" href="#/items" id="browse">${icon("search")}Search the full inventory</a></div>
-      <div id="pick"></div></fieldset>` : h`<div class="note no-print">This show is closed. Its record below is kept as history. Reopen it with <b>Edit show</b> to check out more items.</div>`}
+      <div id="pick"></div></fieldset>` : ""}
     <section class="panel"><header><h2>Costumes, props &amp; pieces used</h2><span class="more small muted">Grouped by character</span></header>
       ${items.length ? h`<div class="tablewrap"><table><tr><th>Item</th><th>Scene / act</th><th>Actor</th><th>How it's used</th><th>Alterations</th><th>Out</th><th>Back</th><th class="no-print"></th></tr>
         ${Object.entries(groups).map(([g, ls]) => h`<tr class="group-h"><td colspan="8">${g}${S.castByRole[g.toLowerCase()] ? h` <span class="muted" style="font-weight:400">· ${S.castByRole[g.toLowerCase()]}</span>` : ""}</td></tr>${ls.map((l) => h`<tr>
@@ -1517,7 +1613,7 @@ async function viewSettings() {
   const sys = await GET("/api/system");
   const dir = isDirector();
   const [users, backups, cloud] = dir ? await Promise.all([GET("/api/users"), GET("/api/backups"), GET("/api/cloud")]) : [[], null, null];
-  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"], ["team_position", "Production team positions"], ["crew_position", "Crew positions"], ["instrument", "Pit instruments"], ["voice_part", "Voice parts"], ["material_type", "Show material types"]];
+  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"], ["team_position", "Production team positions"], ["crew_position", "Crew positions"], ["instrument", "Pit instruments"], ["voice_part", "Voice parts"], ["material_type", "Show material types"], ["sponsor_tier", "Sponsor tiers"], ["ad_size", "Program ad sizes"]];
   shell("settings", h`
     ${page("Settings", dir ? "Settings" : "My account")}
     <div class="stack">

@@ -8,7 +8,7 @@ Originally built for the Alton High School Theatre program.
 
 ## ⬇️ Download and install
 
-**[Download the installer (School-Theatre-Manager-Setup.exe)](download/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.0.0, about 4 MB
+**[Download the installer (School-Theatre-Manager-Setup.exe)](download/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.2.0, about 4 MB
 
 1. Click the link above. The file saves to your **Downloads** folder. (If GitHub opens a page instead, click the **Download** button ⬇ on the right.)
 2. Double-click **School-Theatre-Manager-Setup.exe**.
@@ -24,7 +24,10 @@ Upgrading from the Alton-only versions (*AHS Theatre Inventory* 1.0 or *AHS Thea
 
 ## What it does
 
-- **Shows** — plays, musicals, one-acts, revues and more. Each show has a production team (Director, Assistant Director, Technical Director, Music Director, Choreographer, Stage Manager… any position you add), cast with characters and voice parts, pit orchestra with instruments, and crew. Paste lists from Excel, Google Sheets or Word, or upload a CSV.
+- **Current and past shows** — current productions in one list, finished ones in a **Past shows** archive grouped by year. Move a show to the archive in one click (checking in anything still out), move it back if needed, or add older productions directly. Each show can have a cover image, usually its title artwork or poster. Directors can delete a cancelled show; a backup is made first so it can be restored.
+- **Programs (playbills)** — every show gets a printed program, started from a standard layout filled in from the show: cover, title page with author and licensing credits, director's note, cast list with dotted leaders, musical numbers, production team and crew, sponsors and a back cover with the no-recording notice. Click any text to edit it; add, drag, duplicate or delete blocks and pages; add pictures; choose a style, paper color, border and accent color. Cast, crew and songs stay in sync with the show. Pages warn when they're too full. Print single pages (or save as PDF) or print as a booklet, with pages arranged two-up so the stack folds straight into a program. Reuse last show's program as a starting point.
+- **Sponsors** — a sponsor library shared by every program: name, tier, ad size (full, half or quarter page, business card or name listing), message, amount, contact details and a logo or ad image. The Sponsors block lays them out by tier and ad size, with logos, text, or both.
+- **Show details** — plays, musicals, one-acts, revues and more. Each show has a production team (Director, Assistant Director, Technical Director, Music Director, Choreographer, Stage Manager… any position you add), cast with characters and voice parts, pit orchestra with instruments, and crew. Paste lists from Excel, Google Sheets or Word, or upload a CSV.
 - **Musicals** — a song list per show (act, number, title, who sings it), used as scene choices when checking out costumes.
 - **Show materials and photos** — scripts, scores, rehearsal tracks, programs, schedules, design drawings (up to 200 MB each) and production photos with a cover picture.
 - **Inventory** — every item gets a tag number (e.g. `COS-0042`), any number of photos (main photo, captions, full-screen viewer), category, type, era, gender, size and body measurements, color, material, quantity, storage location, condition (1–5) and value.

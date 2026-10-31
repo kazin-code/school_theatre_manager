@@ -38,6 +38,7 @@ func migrate() {
 	db.Exec(`INSERT INTO item_photos(item_id,file,sort,created_at,created_by)
 		SELECT id, photo, 0, COALESCE(updated_at, created_at), updated_by FROM items
 		WHERE photo IS NOT NULL AND id NOT IN (SELECT item_id FROM item_photos)`)
+	migratePrograms()
 	for _, list := range []string{"team_position", "crew_position", "material_type", "voice_part", "instrument"} {
 		vals := defaultLookups[list]
 		var n int
@@ -468,11 +469,13 @@ func apiAddShowFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := r.URL.Query().Get("kind")
-	if kind != "photo" {
+	if kind != "photo" && kind != "program" {
 		kind = "material"
 	}
+	// "program" files are images placed in the show's printed program
+	isPic := kind == "photo" || kind == "program"
 	limit := int64(maxMaterialBytes)
-	if kind == "photo" {
+	if isPic {
 		limit = maxPhotoBytes
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit*5)
@@ -490,7 +493,7 @@ func apiAddShowFiles(w http.ResponseWriter, r *http.Request) {
 	added := 0
 	for _, fh := range files {
 		ext := cleanExt(fh.Filename)
-		if kind == "photo" {
+		if isPic {
 			if ext == ".heic" || ext == ".heif" {
 				jerr(w, 400, fmt.Sprintf("%s is an iPhone HEIC photo, which browsers can't show. Export it as JPG, or upload it under Materials instead.", fh.Filename))
 				return
@@ -558,6 +561,7 @@ func apiUpdateShowFile(w http.ResponseWriter, r *http.Request) {
 	}
 	updateRow(db, "show_files", []string{"caption", "category"}, f["id"].(int64), b, nil)
 	if b["cover"] == true && str(f["kind"]) == "photo" {
+		removeCoverFiles(f["show_id"].(int64))
 		db.Exec("UPDATE shows SET cover=? WHERE id=?", f["file"], f["show_id"])
 	}
 	jout(w, map[string]any{"ok": true})
@@ -617,6 +621,65 @@ func apiShowFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(showFileDir(), name))
 }
 
+// ---------- recycle folder for deleted shows ----------
+
+func trashDir() string { return filepath.Join(dataDir, "recycle") }
+
+// trashShowMedia moves a show's files into recycle/<date>/ instead of erasing them.
+func trashShowMedia(showID int64) {
+	day := filepath.Join(trashDir(), time.Now().Format("2006-01-02"))
+	os.MkdirAll(day, 0o755)
+	rows, _ := qmaps(db, "SELECT file FROM show_files WHERE show_id=?", showID)
+	for _, f := range rows {
+		name := str(f["file"])
+		if os.Rename(filepath.Join(showFileDir(), name), filepath.Join(day, name)) != nil {
+			copyFile(filepath.Join(showFileDir(), name), filepath.Join(day, name))
+			os.Remove(filepath.Join(showFileDir(), name))
+		}
+	}
+}
+
+// recoverFromTrash puts back any show file or item photo the database refers to but that is
+// only in the recycle folder (after a backup from before a delete is restored).
+func recoverFromTrash() int {
+	days, _ := os.ReadDir(trashDir())
+	if len(days) == 0 {
+		return 0
+	}
+	n := 0
+	for dir, q := range map[string]string{showFileDir(): "SELECT file FROM show_files", photoDir(): "SELECT file FROM item_photos"} {
+		rows, _ := qmaps(db, q)
+		for _, r := range rows {
+			name := str(r["file"])
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				continue
+			}
+			for _, d := range days {
+				src := filepath.Join(trashDir(), d.Name(), name)
+				if _, err := os.Stat(src); err == nil {
+					os.MkdirAll(dir, 0o755)
+					if os.Rename(src, filepath.Join(dir, name)) == nil {
+						n++
+					}
+					break
+				}
+			}
+		}
+	}
+	return n
+}
+
+// pruneTrash empties recycle folders older than 60 days.
+func pruneTrash() {
+	cut := time.Now().AddDate(0, 0, -60).Format("2006-01-02")
+	days, _ := os.ReadDir(trashDir())
+	for _, d := range days {
+		if d.IsDir() && d.Name() < cut {
+			os.RemoveAll(filepath.Join(trashDir(), d.Name()))
+		}
+	}
+}
+
 func deleteShowMedia(showID int64) {
 	rows, _ := qmaps(db, "SELECT file FROM show_files WHERE show_id=?", showID)
 	for _, f := range rows {
@@ -625,4 +688,67 @@ func deleteShowMedia(showID int64) {
 	db.Exec("DELETE FROM show_files WHERE show_id=?", showID)
 	db.Exec("DELETE FROM show_people WHERE show_id=?", showID)
 	db.Exec("DELETE FROM show_numbers WHERE show_id=?", showID)
+}
+
+// ---------- show cover image ----------
+// A show's cover is usually its title artwork, logo or poster. Uploaded covers are stored as
+// show_files of kind "cover" (kept out of the photo gallery); a gallery photo can also be the cover.
+
+func apiSetShowCover(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	id := pathID(r)
+	s, _ := qone(db, "SELECT * FROM shows WHERE id=?", id)
+	if s == nil {
+		jerr(w, 404, "That show doesn't exist.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxPhotoBytes+1<<20)
+	f, fh, err := r.FormFile("file")
+	if err != nil {
+		jerr(w, 400, "Choose a JPG, PNG, WEBP or GIF image under 25 MB.")
+		return
+	}
+	defer f.Close()
+	ext := cleanExt(fh.Filename)
+	if ext == ".heic" || ext == ".heif" {
+		jerr(w, 400, "That's an iPhone HEIC photo, which browsers can't show. Export it as JPG first.")
+		return
+	}
+	if !photoExts[ext] {
+		jerr(w, 400, "The cover must be a JPG, PNG, WEBP or GIF image. A PDF poster can go under Materials.")
+		return
+	}
+	name, size, err := saveUpload(showFileDir(), fmt.Sprintf("show-%d-cover", id), f, ext)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	removeCoverFiles(id)
+	orig := filepath.Base(strings.ReplaceAll(fh.Filename, `\`, "/"))
+	db.Exec(`INSERT INTO show_files(show_id,kind,file,original_name,size,sort,created_at,created_by) VALUES(?,?,?,?,?,0,?,?)`, id, "cover", name, orig, size, now(), u.Name())
+	db.Exec("UPDATE shows SET cover=?, updated_at=?, updated_by=? WHERE id=?", name, now(), u.Name(), id)
+	logActivity(u.Name(), "show", "Changed the cover image for "+str(s["title"]))
+	jout(w, map[string]any{"cover": name})
+}
+
+func apiRemoveShowCover(w http.ResponseWriter, r *http.Request) {
+	id := pathID(r)
+	var title string
+	if db.QueryRow("SELECT title FROM shows WHERE id=?", id).Scan(&title) != nil {
+		jerr(w, 404, "That show doesn't exist.")
+		return
+	}
+	removeCoverFiles(id)
+	db.Exec("UPDATE shows SET cover=NULL WHERE id=?", id)
+	logActivity(currentUser(r).Name(), "show", "Removed the cover image from "+title)
+	jout(w, map[string]any{"ok": true})
+}
+
+// removeCoverFiles deletes an uploaded cover (gallery photos used as the cover are left alone).
+func removeCoverFiles(showID int64) {
+	rows, _ := qmaps(db, "SELECT id, file FROM show_files WHERE show_id=? AND kind='cover'", showID)
+	for _, c := range rows {
+		os.Remove(filepath.Join(showFileDir(), str(c["file"])))
+		db.Exec("DELETE FROM show_files WHERE id=?", c["id"])
+	}
 }

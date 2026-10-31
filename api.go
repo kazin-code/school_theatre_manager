@@ -189,6 +189,21 @@ func routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/shows/{id}", auth("", apiShow))
 	mux.HandleFunc("PUT /api/shows/{id}", auth("", apiUpdateShow))
 	mux.HandleFunc("DELETE /api/shows/{id}", auth("director", apiDeleteShow))
+	mux.HandleFunc("POST /api/shows/{id}/archive", auth("", apiArchiveShow))
+	mux.HandleFunc("POST /api/shows/{id}/reopen", auth("", apiReopenShow))
+	mux.HandleFunc("POST /api/shows/{id}/cover", auth("", apiSetShowCover))
+	mux.HandleFunc("GET /api/shows/{id}/program", auth("", apiGetProgram))
+	mux.HandleFunc("PUT /api/shows/{id}/program", auth("", apiSaveProgram))
+	mux.HandleFunc("DELETE /api/shows/{id}/program", auth("", apiResetProgram))
+	mux.HandleFunc("POST /api/shows/{id}/program/copy", auth("", apiCopyProgram))
+	mux.HandleFunc("GET /api/sponsors", auth("", apiSponsors))
+	mux.HandleFunc("POST /api/sponsors", auth("", apiCreateSponsor))
+	mux.HandleFunc("PUT /api/sponsors/{id}", auth("", apiUpdateSponsor))
+	mux.HandleFunc("DELETE /api/sponsors/{id}", auth("", apiDeleteSponsor))
+	mux.HandleFunc("POST /api/sponsors/{id}/logo", auth("", apiSponsorLogo))
+	mux.HandleFunc("DELETE /api/sponsors/{id}/logo", auth("", apiSponsorLogo))
+	mux.HandleFunc("GET /files/sponsor/{name}", auth("", apiSponsorFile))
+	mux.HandleFunc("DELETE /api/shows/{id}/cover", auth("", apiRemoveShowCover))
 	mux.HandleFunc("POST /api/shows/{id}/items", auth("", apiShowCheckout))
 	mux.HandleFunc("POST /api/shows/{id}/return", auth("", apiShowReturn))
 	mux.HandleFunc("PUT /api/show-items/{id}", auth("", apiUpdateShowItem))
@@ -1178,7 +1193,13 @@ func apiShows(w http.ResponseWriter, r *http.Request) {
 			args = append(args, "%"+v+"%")
 		}
 	}
-	if v := q.Get("status"); v != "" {
+	switch v := q.Get("status"); v {
+	case "":
+	case "current":
+		where = append(where, "status!='closed'")
+	case "past":
+		where = append(where, "status='closed'")
+	default:
 		where = append(where, "status=?")
 		args = append(args, v)
 	}
@@ -1193,7 +1214,11 @@ func apiShows(w http.ResponseWriter, r *http.Request) {
 	if len(where) > 0 {
 		s += " WHERE " + strings.Join(where, " AND ")
 	}
-	rows, err := qmaps(db, s+" ORDER BY status='closed', COALESCE(open_date, year || '-12-31') DESC, id DESC", args...)
+	order := " ORDER BY status='closed', COALESCE(open_date, year || '-12-31') DESC, id DESC"
+	if q.Get("status") == "current" {
+		order = " ORDER BY COALESCE(open_date, year || '-12-31'), id"
+	}
+	rows, err := qmaps(db, s+order, args...)
 	if err != nil {
 		fail(w, err)
 		return
@@ -1254,20 +1279,116 @@ func apiUpdateShow(w http.ResponseWriter, r *http.Request) {
 	jout(w, map[string]any{"ok": true})
 }
 
+// apiDeleteShow removes a show entirely, for example when it is cancelled. Anything still checked
+// out goes back on the shelf. A database backup is made first and the show's files are kept in
+// the recycle folder for 60 days, so restoring that backup brings everything back.
 func apiDeleteShow(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
 	id := pathID(r)
-	var n int
-	db.QueryRow("SELECT COUNT(*) FROM show_items WHERE show_id=?", id).Scan(&n)
-	if n > 0 {
-		jerr(w, 400, "This show has items on its record. Remove them first, or mark the show Closed to keep its history.")
+	s, _ := qone(db, "SELECT * FROM shows WHERE id=?", id)
+	if s == nil {
+		jerr(w, 404, "That show doesn't exist.")
 		return
 	}
-	var t string
-	db.QueryRow("SELECT title FROM shows WHERE id=?", id).Scan(&t)
-	deleteShowMedia(id)
-	db.Exec("DELETE FROM shows WHERE id=?", id)
-	logActivity(currentUser(r).Name(), "show", "Deleted show "+t)
-	jout(w, map[string]any{"ok": true})
+	b, _ := body(r)
+	title := str(s["title"])
+	if !strings.EqualFold(strings.Join(strings.Fields(str(b["confirm"])), " "), strings.Join(strings.Fields(title), " ")) {
+		jerr(w, 400, "Type the show's title exactly to confirm: "+title)
+		return
+	}
+	var out int
+	db.QueryRow("SELECT COALESCE(SUM(qty),0) FROM show_items WHERE show_id=? AND date_returned IS NULL", id).Scan(&out)
+	backup, err := makeBackup("before-deleting-show")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	trashShowMedia(id)
+	tx, err := db.Begin()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	for _, q := range []string{"DELETE FROM show_items WHERE show_id=?", "DELETE FROM show_people WHERE show_id=?", "DELETE FROM show_numbers WHERE show_id=?", "DELETE FROM show_files WHERE show_id=?", "DELETE FROM programs WHERE show_id=?", "DELETE FROM shows WHERE id=?"} {
+		if _, err := tx.Exec(q, id); err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		fail(w, err)
+		return
+	}
+	reason := "Deleted show " + title
+	if why := str(b["reason"]); why != "" {
+		reason += " (" + why + ")"
+	}
+	if out > 0 {
+		reason += fmt.Sprintf("; %d checked-out piece(s) put back on the shelf", out)
+	}
+	logActivity(u.Name(), "show", reason+". Backup: "+backup)
+	jout(w, map[string]any{"ok": true, "returned": out, "backup": backup})
+}
+
+// apiArchiveShow moves a show to Past shows, optionally checking in everything still out.
+func apiArchiveShow(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	id := pathID(r)
+	s, _ := qone(db, "SELECT * FROM shows WHERE id=?", id)
+	if s == nil {
+		jerr(w, 404, "That show doesn't exist.")
+		return
+	}
+	b, _ := body(r)
+	date := str(b["date"])
+	if date == "" {
+		date = today()
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	returned := 0
+	if b["return_items"] == true {
+		open, _ := qmaps(tx, "SELECT si.id, si.item_id, si.qty, i.condition FROM show_items si JOIN items i ON i.id=si.item_id WHERE si.show_id=? AND si.date_returned IS NULL", id)
+		for _, l := range open {
+			tx.Exec("UPDATE show_items SET date_returned=?, condition_in=?, notes_in=COALESCE(notes_in, 'Returned when the show moved to past shows'), returned_by=? WHERE id=?", date, l["condition"], u.Name(), l["id"])
+			tx.Exec("INSERT INTO condition_log(item_id,at,condition,notes,source,user) VALUES(?,?,?,?,?,?)", l["item_id"], now(), l["condition"], nil, "Returned from show: "+str(s["title"]), u.Name())
+			returned += int(l["qty"].(int64))
+		}
+	}
+	tx.Exec("UPDATE shows SET status='closed', close_date=COALESCE(close_date, ?), updated_at=?, updated_by=? WHERE id=?", date, now(), u.Name(), id)
+	if err := tx.Commit(); err != nil {
+		fail(w, err)
+		return
+	}
+	msg := "Moved " + str(s["title"]) + " to past shows"
+	if returned > 0 {
+		msg += fmt.Sprintf(" and returned %d piece(s)", returned)
+	}
+	logActivity(u.Name(), "show", msg)
+	jout(w, map[string]any{"ok": true, "returned": returned})
+}
+
+func apiReopenShow(w http.ResponseWriter, r *http.Request) {
+	id := pathID(r)
+	var title string
+	if db.QueryRow("SELECT title FROM shows WHERE id=?", id).Scan(&title) != nil {
+		jerr(w, 404, "That show doesn't exist.")
+		return
+	}
+	var open int
+	db.QueryRow("SELECT COUNT(*) FROM show_items WHERE show_id=? AND date_returned IS NULL", id).Scan(&open)
+	status := "planning"
+	if open > 0 {
+		status = "in production"
+	}
+	db.Exec("UPDATE shows SET status=?, updated_at=?, updated_by=? WHERE id=?", status, now(), currentUser(r).Name(), id)
+	logActivity(currentUser(r).Name(), "show", "Moved "+title+" back to current shows")
+	jout(w, map[string]any{"ok": true, "status": status})
 }
 
 func apiShowCheckout(w http.ResponseWriter, r *http.Request) {
