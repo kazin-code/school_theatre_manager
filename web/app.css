@@ -7,9 +7,10 @@
   --card: #ffffff;
   --line: #e4e0de;
   --line-2: #d2ccc9;
-  --red: #c21d2b;        /* AHS mask red */
+  --red: #c21d2b;        /* default accent: stage-curtain red; replaced by the school color */
   --red-ink: #9d1420;
   --red-wash: #fbeced;
+  --on-accent: #ffffff;  /* text on accent-colored buttons; dark when the school color is light */
   --good: #2f7a4a;  --good-wash: #e6f3ea;
   --warn: #a8640a;  --warn-wash: #fbf0dc;
   --bad: #b3261e;   --bad-wash: #fbe7e5;
@@ -50,7 +51,7 @@ h3 { font-size: 15px; }
 .nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); color: #d9d2d0; text-decoration: none; font-weight: 500; }
 .nav a svg { width: 18px; height: 18px; flex: none; opacity: .8; }
 .nav a:hover { background: #2a2424; color: #fff; }
-.nav a.on { background: var(--red); color: #fff; }
+.nav a.on { background: var(--red); color: var(--on-accent); }
 .nav a.on svg { opacity: 1; }
 .nav .sep { height: 1px; background: #332c2c; margin: 8px 6px; }
 .nav .badge { margin-left: auto; background: #fff; color: var(--red-ink); border-radius: 10px; font-size: 11px; padding: 0 7px; font-weight: 700; }
@@ -71,7 +72,7 @@ h3 { font-size: 15px; }
 /* ---------- controls ---------- */
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); background: var(--card); padding: 7px 13px; border-radius: var(--r); cursor: pointer; font-weight: 500; text-decoration: none; color: var(--ink); white-space: nowrap; }
 .btn:hover { border-color: var(--ink-3); }
-.btn.primary { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.primary { background: var(--red); border-color: var(--red); color: var(--on-accent); }
 .btn.primary:hover { background: var(--red-ink); border-color: var(--red-ink); }
 .btn.dark { background: var(--ink); border-color: var(--ink); color: #fff; }
 .btn.ghost { border-color: transparent; background: transparent; }
@@ -355,3 +356,15 @@ ul.feed { list-style: none; margin: 0; padding: 0; }
 .typepick label.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .typepick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .typepick label:focus-within { outline: 2px solid var(--red); outline-offset: 2px; }
+
+/* ---------- branding (v2) ---------- */
+.brandgrid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; }
+.brandlogo { width: 100%; aspect-ratio: 1; max-width: 220px; border: 1px solid var(--line); border-radius: 10px; background: #fff; display: grid; place-items: center; overflow: hidden; }
+.brandlogo img { max-width: 88%; max-height: 88%; object-fit: contain; }
+.swatches { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.swatches input[type=color] { width: 44px; height: 34px; padding: 2px; border: 1px solid var(--line-2); border-radius: 6px; background: #fff; cursor: pointer; }
+.swatches .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line-2); cursor: pointer; padding: 0; }
+.login .curtain p.school { font-family: var(--display); color: #fff; font-size: 16px; letter-spacing: .04em; }
+.brand img { object-fit: contain; }
+.login .curtain img { object-fit: contain; }
+@media (max-width: 860px) { .brandgrid { grid-template-columns: 1fr; } }

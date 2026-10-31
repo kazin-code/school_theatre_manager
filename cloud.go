@@ -18,8 +18,7 @@ import (
 // folder that OneDrive / Google Drive / Dropbox keeps synced to the cloud.
 
 const (
-	mirrorSub    = "AHS Theatre Application Backup"
-	oldMirrorSub = "AHS Theatre Inventory Backup" // version 1.0
+	mirrorSub = "School Theatre Manager Backup"
 )
 
 var (
@@ -35,9 +34,13 @@ func mirrorRoot() string {
 	}
 	cur := filepath.Join(cfg.MirrorFolder, mirrorSub)
 	if _, err := os.Stat(cur); err != nil {
-		if old := filepath.Join(cfg.MirrorFolder, oldMirrorSub); dirExists(old) {
-			if os.Rename(old, cur) != nil {
-				return old
+		// names used by versions 1.0 and 1.1
+		for _, oldSub := range []string{"AHS Theatre Application Backup", "AHS Theatre Inventory Backup"} {
+			if old := filepath.Join(cfg.MirrorFolder, oldSub); dirExists(old) {
+				if os.Rename(old, cur) != nil {
+					return old
+				}
+				break
 			}
 		}
 	}
@@ -103,7 +106,7 @@ func syncNow() error {
 		if _, err := os.Stat(cfg.MirrorFolder); err != nil {
 			return fmt.Errorf("The cloud folder %s can't be reached. Is OneDrive/Google Drive signed in?", cfg.MirrorFolder)
 		}
-		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos"), filepath.Join(root, "showfiles")} {
+		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos"), filepath.Join(root, "showfiles"), filepath.Join(root, "branding")} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				return err
 			}
@@ -134,6 +137,13 @@ func syncNow() error {
 			os.Remove(filepath.Join(root, "daily", names[0]))
 			names = names[1:]
 		}
+		// school branding is small and can change, so it is always copied
+		bents, _ := os.ReadDir(brandDir())
+		for _, e := range bents {
+			if err := copyFile(filepath.Join(brandDir(), e.Name()), filepath.Join(root, "branding", e.Name())); err != nil {
+				return err
+			}
+		}
 		// photos and show files: copy any that aren't there yet
 		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir()} {
 			ents, _ := os.ReadDir(local)
@@ -147,7 +157,7 @@ func syncNow() error {
 				}
 			}
 		}
-		os.WriteFile(filepath.Join(root, "README.txt"), []byte("These files are automatic backups from the AHS Theatre Application.\r\n\r\nTo restore on a new computer: install the AHS Theatre Application, sign in as director,\r\nopen Settings > Cloud backup, choose this folder and click Restore.\r\n\r\nDo not edit these files.\r\n"), 0o644)
+		os.WriteFile(filepath.Join(root, "README.txt"), []byte("These files are automatic backups from School Theatre Manager ("+programName()+").\r\n\r\nTo restore on a new computer: install School Theatre Manager, sign in as director,\r\nopen Settings > Cloud backup, choose this folder and click Restore.\r\n\r\nDo not edit these files.\r\n"), 0o644)
 		return nil
 	}()
 	syncMu.Lock()
@@ -337,6 +347,14 @@ func apiRestore(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+	if str(b["source"]) == "cloud" {
+		bents, _ := os.ReadDir(filepath.Join(mirrorRoot(), "branding"))
+		for _, e := range bents {
+			os.MkdirAll(brandDir(), 0o755)
+			copyFile(filepath.Join(mirrorRoot(), "branding", e.Name()), filepath.Join(brandDir(), e.Name()))
+		}
+		loadBranding()
 	}
 	logActivity(who, "backup", fmt.Sprintf("Restored database from %s backup %s (safety copy: %s)", str(b["source"]), name, safety))
 	jout(w, map[string]any{"ok": true, "photos": restored, "safety": safety})

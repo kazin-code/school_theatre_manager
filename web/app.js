@@ -1,5 +1,5 @@
 "use strict";
-/* AHS Theatre Application — browser interface. Talks to the local server at /api. */
+/* School Theatre Manager — browser interface. Talks to the local server at /api. */
 
 // ---------- tiny templating ----------
 class Safe { constructor(s) { this.s = s; } toString() { return this.s; } }
@@ -30,7 +30,28 @@ const ICON = {
 const icon = (n) => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ""}</svg>`);
 
 // ---------- state ----------
-const S = { me: null, lists: {}, configured: {}, shows: [], pull: loadPull(), staged: null };
+const S = { me: null, lists: {}, configured: {}, shows: [], pull: loadPull(), staged: null, brand: { product: "School Theatre Manager", name: "School Theatre Manager" } };
+
+// ---------- school branding ----------
+const BN = () => S.brand.name || "School Theatre Manager";          // the theatre program's name
+const logoURL = () => "/branding/logo.png" + (S.brand.logo_version ? "?v=" + S.brand.logo_version : "");
+function hexToRgb(hx) { const n = parseInt(hx.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const rgbToHex = (r) => "#" + r.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+const mixHex = (a, b, t) => { const x = hexToRgb(a), y = hexToRgb(b); return rgbToHex(x.map((v, i) => v + (y[i] - v) * t)); };
+const luminance = (hx) => { const [r, g, b] = hexToRgb(hx).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+function applyBrand() {
+  const b = S.brand, st = document.documentElement.style;
+  document.title = BN();
+  let fav = $('link[rel="icon"]'); if (fav) fav.href = logoURL();
+  if (b.accent && /^#[0-9a-f]{6}$/i.test(b.accent)) {
+    const light = luminance(b.accent) > 0.4;
+    st.setProperty("--red", b.accent);
+    st.setProperty("--red-ink", light ? mixHex(b.accent, "#000000", 0.45) : mixHex(b.accent, "#000000", 0.2));
+    st.setProperty("--red-wash", mixHex(b.accent, "#ffffff", 0.9));
+    st.setProperty("--on-accent", light ? "#1b1717" : "#ffffff");
+  } else ["--red", "--red-ink", "--red-wash", "--on-accent"].forEach((k) => st.removeProperty(k));
+}
+async function loadBrand() { try { S.brand = await GET("/api/branding"); } catch {} applyBrand(); }
 function loadPull() { try { return JSON.parse(localStorage.getItem("ati_pull") || "[]"); } catch { return []; } }
 function savePull() { try { localStorage.setItem("ati_pull", JSON.stringify(S.pull)); } catch {} updatePullBadge(); }
 const isDirector = () => S.me && S.me.role === "director";
@@ -42,7 +63,7 @@ async function api(method, url, data) {
   if (data instanceof FormData) opt.body = data;
   else if (data !== undefined) { opt.body = JSON.stringify(data); opt.headers["Content-Type"] = "application/json"; }
   let res;
-  try { res = await fetch(url, opt); } catch { throw new ApiError("The AHS Theatre Application isn't running. Open it from the desktop shortcut, then try again.", 0); }
+  try { res = await fetch(url, opt); } catch { throw new ApiError(`${BN()} isn't running. Open it from the desktop shortcut, then try again.`, 0); }
   let body = null;
   try { body = await res.json(); } catch {}
   if (res.status === 401 && !url.startsWith("/api/login")) { S.me = null; renderLogin(); throw new ApiError("Please sign in.", 401); }
@@ -149,7 +170,7 @@ function shell(active, content) {
   const pullN = S.pull.length;
   $("#app").innerHTML = h`<div class="shell">
     <aside class="side no-print">
-      <div class="brand"><img src="logo.png" alt="AHS Theatre"><div><b>AHS Theatre</b><span>Application</span></div></div>
+      <div class="brand"><img src="${logoURL()}" alt="${BN()} logo"><div><b>${BN()}</b><span>${S.brand.school && S.brand.school !== BN() ? S.brand.school : "Theatre Manager"}</span></div></div>
       <nav class="nav">${NAV.map((n) => n ? h`<a href="#/${n[0]}" class="${active === n[0] ? "on" : ""}">${icon(n[2])}${n[1]}${n[0] === "pull" ? h`<span class="badge" id="pullbadge" ${pullN ? "" : raw("hidden")}>${pullN}</span>` : ""}${n[0] === "rentals" && S.overdue ? h`<span class="badge">${S.overdue} late</span>` : ""}</a>` : h`<div class="sep"></div>`)}</nav>
       <div class="who"><div><b>${S.me.display_name || S.me.username}</b>${S.me.role === "director" ? "Director" : "Assistant"}</div><button id="signout">Sign out</button></div>
     </aside>
@@ -184,7 +205,7 @@ function pwMeter(input) {
 
 // ---------- auth screens ----------
 function authFrame(inner) {
-  $("#app").innerHTML = h`<div class="login"><div class="curtain"><img src="logo.png" alt="AHS Theatre logo"><h1>AHS Theatre Application</h1><p>Shows, cast and crew, costumes, props and set pieces: what we own, where it is, and every production it has been part of.</p></div>${inner}</div>`.s;
+  $("#app").innerHTML = h`<div class="login"><div class="curtain"><img src="${logoURL()}" alt="${BN()} logo"><h1>${BN()}</h1>${S.brand.school && S.brand.school !== BN() ? h`<p class="school">${S.brand.school}</p>` : ""}<p>${S.brand.tagline || "Shows, cast and crew, costumes, props and set pieces: what we own, where it is, and every production it has been part of."}</p></div>${inner}</div>`.s;
 }
 async function renderLogin() {
   let setup = false;
@@ -208,7 +229,7 @@ async function renderLogin() {
 }
 function renderSetup() {
   authFrame(h`<form id="setupf" novalidate>
-    <div><h2>Create the director account</h2><p class="muted small">This account owns the AHS Theatre Application. It can add other users, change settings and restore backups.</p></div>
+    <div><h2>Create the director account</h2><p class="muted small">This account owns ${BN()}. It can add other users, change settings and restore backups.</p></div>
     <div class="errbox" hidden></div>
     ${fld("Your name", h`<input type="text" name="display_name" id="sd" placeholder="e.g. Ms. Rivera">`)}
     ${fld("Username", h`<input type="text" name="username" id="su" autocomplete="username">`, "", "Letters, numbers, dots or dashes.")}
@@ -290,7 +311,8 @@ async function refreshLookups() {
   S.lists = l.lists; S.configured = l.configured;
 }
 async function boot() {
-  try { S.me = await GET("/api/me"); } catch (e) { if (e.code === 401 || e.code === 428) return; $("#app").innerHTML = h`<div class="boot"><img src="logo.png" alt="" width="96" height="96"><p>${e.message}</p></div>`.s; return; }
+  await loadBrand();
+  try { S.me = await GET("/api/me"); } catch (e) { if (e.code === 401 || e.code === 428) return; $("#app").innerHTML = h`<div class="boot"><img src="${logoURL()}" alt="" width="96" height="96"><p>${e.message}</p></div>`.s; return; }
   if (S.me.must_change) return renderMustChange();
   await refreshLookups();
   route();
@@ -302,7 +324,7 @@ async function viewDashboard() {
   S.overdue = d.overdue_count || 0;
   const n = (v) => Math.round(v || 0).toLocaleString();
   shell("dashboard", h`
-    ${page("Alton High School Theatre", `Welcome back, ${S.me.display_name || S.me.username}`)}
+    ${page(S.brand.school || BN(), `Welcome back, ${S.me.display_name || S.me.username}`)}
     <div class="quick no-print">
       <a class="btn primary" href="#/items/new">${icon("plus")}Add an item</a>
       <a class="btn" href="#/items">${icon("search")}Search inventory</a>
@@ -563,7 +585,7 @@ async function viewItem(id) {
       <div data-pane="cond" class="tablewrap" hidden>${d.conditions.length ? h`<table><tr><th>When</th><th>Condition</th><th>What happened</th><th>Notes</th><th>By</th></tr>${d.conditions.map((c) => h`<tr><td class="num">${fmtDate(c.at)}</td><td>${condBadge(c.condition)}</td><td>${c.source}</td><td class="small">${c.notes || ""}</td><td class="small">${c.user || ""}</td></tr>`)}</table>` : h`<div class="empty">No condition records yet.</div>`}</div>
     </section>
     ${isDirector() ? h`<p class="no-print" style="margin-top:20px"><button class="btn sm danger" id="delitem">Delete this item</button></p>` : ""}
-    <div id="tagcard"><div class="bar"><img src="logo.png" alt=""><b>AHS Theatre</b></div><div class="t">${it.tag}</div><div class="n">${it.name}</div>
+    <div id="tagcard"><div class="bar"><img src="${logoURL()}" alt=""><b>${BN()}</b></div><div class="t">${it.tag}</div><div class="n">${it.name}</div>
       <div class="small">${[it.category, it.era, it.gender, it.size && "Size " + it.size].filter(Boolean).join(" · ")}</div><div class="small">${meas}</div><div class="small">Home: ${it.location || "—"}</div></div>`);
   bindRows();
   itemGallery($("#gallery"), it, d.photos);
@@ -799,7 +821,7 @@ async function viewRenterForm(id) {
         ${fld("Phone", h`<input type="tel" id="f-phone" name="phone" value="${val(r, "phone")}">`)}
         ${fld("Email", h`<input type="email" id="f-email" name="email" value="${val(r, "email")}">`)}
         ${fld("Address", inp("address", r), "wide")}
-        <div class="full"><label class="check"><input type="checkbox" name="approved" id="f-approved" ${r.approved ? raw("checked") : ""}> Approved to rent from AHS Theatre</label></div>
+        <div class="full"><label class="check"><input type="checkbox" name="approved" id="f-approved" ${r.approved ? raw("checked") : ""}> Approved to rent from ${BN()}</label></div>
         ${fld("Notes", area("notes", r), "full")}
       </div></fieldset>
       <div class="formbar"><a class="btn ghost" href="${id ? "#/renter/" + id : "#/renters"}">Cancel</a><button class="btn primary">${id ? "Save changes" : "Save renter"}</button></div>
@@ -907,7 +929,7 @@ async function viewRental(id) {
   const r = d.rental, rn = d.renter, out = r.status === "out";
   shell("rentals", h`
     ${page("Rental #" + id, rn.name, h`<button class="btn" id="printr">${icon("print")}Print agreement</button><button class="btn" id="editr">Edit details</button>${isDirector() ? h`<button class="btn danger" id="delr">Delete</button>` : ""}`, h`<a href="#/rentals">Rentals</a>`)}
-    <div class="print-only" style="margin-bottom:12px"><b>Alton High School Theatre — Rental agreement #${id}</b></div>
+    <div class="print-only" style="margin-bottom:12px"><b>${[S.brand.school, BN() !== S.brand.school ? BN() : ""].filter(Boolean).join(" · ") || BN()} — Rental agreement #${id}</b></div>
     <div class="two" style="margin-bottom:18px">
       <section class="panel"><div class="body"><div class="dl">
         <div><span>Status</span><b>${out ? (r.overdue ? h`<span class="pill bad">Overdue</span>` : h`<span class="pill warn">Out</span>`) : h`<span class="pill good">Returned ${fmtDate(r.date_returned)}</span>`}</b></div>
@@ -943,7 +965,7 @@ async function viewRental(id) {
       ${d.items.map((l) => h`<tr class="click" data-go="#/item/${l.item_id}"><td>${tag(l.tag)} <b>${l.name}</b><div class="small muted">${[l.category, l.size].filter(Boolean).join(" · ")}</div></td><td class="r num">${l.qty}</td><td>${condBadge(l.condition_out)}</td><td class="small">${l.notes_out || ""}</td>
         ${!out ? h`<td>${condBadge(l.condition_in)}</td><td class="small">${l.notes_in || ""}</td><td class="r num">${l.damage_charge ? money(l.damage_charge) : ""}</td>` : ""}</tr>`)}</table></div></section>
     <div class="print-only"><p class="small">The renter agrees to return all items by the due date in the condition listed above, and to pay for cleaning, repair or replacement of damaged or missing items.</p>
-      <div class="sig"><div>Renter signature &amp; date</div><div>AHS Theatre signature &amp; date</div></div></div>`);
+      <div class="sig"><div>Renter signature &amp; date</div><div>${BN()} signature &amp; date</div></div></div>`);
   bindRows();
   $("#printr").onclick = () => window.print();
   $("#editr").onclick = () => modal({
@@ -1158,7 +1180,7 @@ async function viewShowForm(id) {
         ${fld("Season", listInp("season", s))}
         ${fld("School year / year", numInp("year", s, "1", 'min="1990" max="2100"'))}
         ${fld("Director", inp("director", s))}
-        ${fld("Venue", inp("venue", s, 'placeholder="e.g. AHS Auditorium"'))}
+        ${fld("Venue", inp("venue", s, 'placeholder="e.g. School auditorium"'))}
         ${fld("Opening", dateInp("open_date", s.open_date))}${fld("Closing", dateInp("close_date", s.close_date))}
         ${fld("Status", sel("status", [["planning", "Planning"], ["in production", "In production"], ["closed", "Closed"]], s.status))}
         ${fld("Notes", area("notes", s, 3), "full")}
@@ -1499,12 +1521,31 @@ async function viewSettings() {
   shell("settings", h`
     ${page("Settings", dir ? "Settings" : "My account")}
     <div class="stack">
-      ${dir ? h`<section class="panel" id="cloudp"><header><h2>Cloud backup</h2>${cloud.folder ? (cloud.last_error ? h`<span class="pill bad">Problem</span>` : h`<span class="pill good">On</span>`) : h`<span class="pill warn">Off</span>`}</header><div class="body">
+      ${dir ? h`<section class="panel" id="brandp"><header><h2>School &amp; branding</h2></header><div class="body">
+        <p class="small muted" style="margin-top:0;max-width:70ch">How the program presents itself: the sign-in screen, sidebar, browser tab, printed tags and rental agreements, and exported file names.</p>
+        <div class="brandgrid">
+          <div><div class="brandlogo"><img src="${logoURL()}" alt="Current logo"></div>
+            <div id="logodrop" style="margin-top:8px"></div>
+            ${S.brand.has_logo ? h`<button type="button" class="btn sm ghost" id="logoreset" style="margin-top:6px">Use the default stage logo</button>` : ""}</div>
+          <form id="brandf" class="grid" novalidate style="align-content:start">
+            ${fld("School name", h`<input type="text" id="b-school" name="school" maxlength="100" value="${S.brand.school || ""}" placeholder="e.g. Lincoln High School">`, "wide")}
+            ${fld("Theatre program name", h`<input type="text" id="b-program" name="program" maxlength="60" value="${S.brand.program || ""}" placeholder="e.g. Lincoln Drama Club">`, "", "Shown as the program's name.")}
+            ${fld("Short name", h`<input type="text" id="b-short" name="short" maxlength="12" value="${S.brand.short || ""}" placeholder="e.g. LHS">`, "", "Used in file names.")}
+            ${fld("Motto or tagline", h`<input type="text" id="b-tagline" name="tagline" maxlength="120" value="${S.brand.tagline || ""}" placeholder="e.g. All the world’s a stage">`, "full")}
+            <div class="full"><label>Accent color</label><div class="swatches">
+              <input type="color" id="b-accent" name="accent" value="${S.brand.accent || "#c21d2b"}" aria-label="Accent color">
+              ${["#c21d2b", "#8a1538", "#e36f1e", "#d4a017", "#2e7d32", "#00695c", "#1565c0", "#0d2c6c", "#5e35b1", "#4a4343"].map((c) => h`<button type="button" class="sw" data-sw="${c}" style="background:${c}" aria-label="Use ${c}"></button>`)}
+              <button type="button" class="btn sm ghost" id="b-accent-reset">Default red</button></div><div class="hint">Use your school colors. Buttons and highlights change right away.</div></div>
+            <div class="full"><button class="btn primary">Save branding</button></div>
+          </form>
+        </div></div></section>
+
+      <section class="panel" id="cloudp"><header><h2>Cloud backup</h2>${cloud.folder ? (cloud.last_error ? h`<span class="pill bad">Problem</span>` : h`<span class="pill good">On</span>`) : h`<span class="pill warn">Off</span>`}</header><div class="body">
         <p style="margin-top:0;max-width:70ch">Keep a copy of the database, photos and show materials in your school OneDrive or Google Drive folder. The app updates the copy about a minute and a half after each change, and keeps a daily copy for 60 days. If this computer fails, install the app on a new one, set the same folder here and click <b>Restore</b>.</p>
         ${cloud.last_error ? h`<div class="errbox">${cloud.last_error}</div>` : ""}
         ${cloud.folder ? h`<p class="small">Saving to <b class="mono">${cloud.backup_folder}</b><br>Last copied: <b>${cloud.last_sync ? fmtWhen(cloud.last_sync) + " (" + cloud.last_sync + ")" : "not yet this session"}</b></p>` : ""}
         <form id="cloudf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end" novalidate>
-          <div style="flex:1 1 320px">${fld("Synced folder on this computer", h`<input type="text" name="folder" id="cf-folder" value="${cloud.folder}" placeholder="e.g. C:\\Users\\you\\OneDrive - Alton CUSD 11">`)}</div>
+          <div style="flex:1 1 320px">${fld("Synced folder on this computer", h`<input type="text" name="folder" id="cf-folder" value="${cloud.folder}" placeholder="e.g. C:\\Users\\you\\OneDrive - Your School District">`)}</div>
           <button class="btn primary">Save folder</button>${cloud.folder ? h`<button type="button" class="btn" id="syncnow">Back up now</button><button type="button" class="btn ghost" id="cloudoff">Turn off</button>` : ""}
         </form>
         ${cloud.candidates.length ? h`<p class="small" style="margin-bottom:0">Found on this computer: ${cloud.candidates.map((c) => h`<button type="button" class="btn sm" data-cand="${c.path}">${c.label}</button> `)}</p>` : h`<p class="small muted" style="margin-bottom:0">No OneDrive or Google Drive folder was found. Sign in to OneDrive (or install Google Drive for desktop), then come back.</p>`}
@@ -1540,9 +1581,9 @@ async function viewSettings() {
         <a class="btn" href="/api/export/items.csv">Inventory</a><a class="btn" href="/api/export/shows.csv">Show history</a><a class="btn" href="/api/export/people.csv">Cast &amp; crew</a><a class="btn" href="/api/export/numbers.csv">Musical numbers</a><a class="btn" href="/api/export/rentals.csv">Rental history</a><a class="btn" href="/api/export/renters.csv">Renters</a></div></section>
 
       <section class="panel"><header><h2>About this installation</h2></header><div class="body small">
-        <div class="dl"><div><span>Version</span><b>${sys.version}</b></div><div><span>Address</span><b class="mono">http://127.0.0.1:${sys.port}</b></div><div style="grid-column:1/-1"><span>Data folder</span><b class="mono">${sys.data_folder}</b></div></div>
+        <div class="dl"><div><span>Program</span><b>School Theatre Manager ${sys.version}</b></div><div><span>Address</span><b class="mono">http://127.0.0.1:${sys.port}</b></div><div style="grid-column:1/-1"><span>Data folder</span><b class="mono">${sys.data_folder}</b></div></div>
         ${sys.network && sys.lan_urls && sys.lan_urls.length ? h`<p>Other computers on the school network can open: ${sys.lan_urls.map((u) => h`<span class="mono">${u}</span> `)}</p>` : ""}
-        ${dir ? h`<p style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:0"><button class="btn sm" id="opendata">Open data folder</button><button class="btn sm danger" id="quit">Close the AHS Theatre Application</button></p>` : ""}
+        ${dir ? h`<p style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:0"><button class="btn sm" id="opendata">Open data folder</button><button class="btn sm danger" id="quit">Close the program</button></p>` : ""}
       </div></section>
     </div>`);
 
@@ -1553,6 +1594,25 @@ async function viewSettings() {
     if (d.new !== d.confirm) { eb.textContent = "The two new passwords don't match."; eb.hidden = false; return; }
     try { await api("POST", "/api/me/password", d); pwf.reset(); $("#pw1").dispatchEvent(new Event("input")); eb.hidden = true; toast("Password changed"); } catch (err) { eb.textContent = err.message; eb.hidden = false; } };
   if (!dir) return;
+
+  // branding
+  const bf = $("#brandf");
+  let accent = S.brand.accent || "";
+  const preview = (c) => { accent = c; $("#b-accent").value = c || "#c21d2b"; S.brand = { ...S.brand, accent: c }; applyBrand(); };
+  $("#b-accent").addEventListener("input", (e) => preview(e.target.value));
+  $$("[data-sw]").forEach((b) => (b.onclick = () => preview(b.dataset.sw)));
+  $("#b-accent-reset").onclick = () => preview("");
+  bf.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = formData(bf); d.accent = accent;
+    try { S.brand = await api("PUT", "/api/branding", d); applyBrand(); toast("Branding saved"); viewSettings(); } catch (err) { toast(err.message, true); }
+  };
+  dropzone($("#logodrop"), { accept: "image/png,image/jpeg,image/gif,.ico,image/x-icon,image/vnd.microsoft.icon", label: "Change the logo", sub: "PNG, JPG, GIF or ICO. A square logo looks best.",
+    onFiles: async (files, status) => {
+      const fd = new FormData(); fd.append("logo", files[0]); status.textContent = "Uploading…";
+      try { S.brand = await api("POST", "/api/branding/logo", fd); applyBrand(); toast("Logo updated"); viewSettings(); } catch (err) { status.textContent = ""; toast(err.message, true); }
+    } });
+  if ($("#logoreset")) $("#logoreset").onclick = () => confirmBox("Use the default logo?", "Your school's logo will be removed and the built-in stage logo used instead.", "Use default", async () => { S.brand = await api("DELETE", "/api/branding/logo"); applyBrand(); viewSettings(); });
 
   // cloud
   const cf = $("#cloudf");
@@ -1603,9 +1663,9 @@ async function viewSettings() {
   $("#bknow").onclick = async () => { try { const r = await api("POST", "/api/backups"); toast("Saved " + r.name); viewSettings(); } catch (err) { toast(err.message, true); } };
   $("#openbk").onclick = () => api("POST", "/api/open-folder", { which: "backups" });
   $("#opendata").onclick = () => api("POST", "/api/open-folder", { which: "data" });
-  $("#quit").onclick = () => confirmBox("Close the AHS Theatre Application?", "Everything is saved. Open it again any time from the desktop shortcut.", "Close program", async () => {
+  $("#quit").onclick = () => confirmBox(`Close ${BN()}?`, "Everything is saved. Open it again any time from the desktop shortcut.", "Close program", async () => {
     await api("POST", "/api/shutdown");
-    $("#app").innerHTML = h`<div class="boot"><img src="logo.png" alt="" width="96" height="96"><p>The AHS Theatre Application is closed. You can close this tab.</p></div>`.s;
+    $("#app").innerHTML = h`<div class="boot"><img src="${logoURL()}" alt="" width="96" height="96"><p>${BN()} is closed. You can close this tab.</p></div>`.s;
   });
 }
 

@@ -132,6 +132,11 @@ func routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/setup", apiSetupStatus)
 	mux.HandleFunc("POST /api/setup", apiSetup)
 	mux.HandleFunc("POST /api/login", apiLogin)
+	mux.HandleFunc("GET /api/branding", apiBranding)
+	mux.HandleFunc("GET /branding/logo.png", apiLogoFile)
+	mux.HandleFunc("PUT /api/branding", auth("director", apiSaveBranding))
+	mux.HandleFunc("POST /api/branding/logo", auth("director", apiBrandLogo))
+	mux.HandleFunc("DELETE /api/branding/logo", auth("director", apiBrandLogo))
 	mux.HandleFunc("POST /api/logout", apiLogout)
 	mux.HandleFunc("GET /api/me", auth("", apiMe))
 	mux.HandleFunc("POST /api/me/password", auth("", apiChangePassword))
@@ -1458,7 +1463,7 @@ func apiExport(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	cols, _ := rows.Columns()
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="AHS-Theatre-%s-%s"`, today(), r.PathValue("name")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s-%s"`, filePrefix(), today(), r.PathValue("name")))
 	w.Write([]byte("\xEF\xBB\xBF")) // BOM so Excel reads UTF-8
 	cw := csv.NewWriter(w)
 	cw.Write(cols)
@@ -1582,4 +1587,29 @@ func apiShutdown(w http.ResponseWriter, r *http.Request) {
 		db.Close()
 		os.Exit(0)
 	}()
+}
+
+// filePrefix names exported files after the school, e.g. "AHS-Theatre-2026-10-31-items.csv".
+func filePrefix() string {
+	b := currentBrand()
+	name := b.Short
+	if name == "" {
+		name = b.Program
+	}
+	if name == "" {
+		name = "School"
+	}
+	out := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		if r == ' ' || r == '_' {
+			return '-'
+		}
+		return -1
+	}, name)
+	if !strings.Contains(strings.ToLower(out), "theat") {
+		out += "-Theatre"
+	}
+	return out
 }

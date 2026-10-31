@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	appName    = "AHS Theatre Application"
-	appID      = "ahs-theatre-app"
-	appVersion = "1.1.0"
+	productName = "School Theatre Manager"
+	appID       = "school-theatre-manager"
+	appVersion  = "2.0.0"
 )
 
 //go:embed web
@@ -60,7 +60,7 @@ func loadConfig() {
 }
 
 func prepareDataDir() error {
-	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "showfiles"), filepath.Join(dataDir, "backups")} {
+	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "showfiles"), filepath.Join(dataDir, "branding"), filepath.Join(dataDir, "backups")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("could not create %s: %w", d, err)
 		}
@@ -70,6 +70,7 @@ func prepareDataDir() error {
 		logger = log.New(lf, "", log.LstdFlags)
 	}
 	loadConfig()
+	loadBranding()
 	if err := openDB(dbPath()); err != nil {
 		return fmt.Errorf("could not open the database: %w", err)
 	}
@@ -104,12 +105,37 @@ func main() {
 			}
 			logActivity(u, "account", "Director account created by installer")
 		}
+		// school details and logo chosen in the installer
+		b := currentBrand()
+		changed := false
+		for env, p := range map[string]*string{"ATI_SCHOOL": &b.School, "ATI_PROGRAM": &b.Program, "ATI_SHORT": &b.Short, "ATI_TAGLINE": &b.Tagline, "ATI_ACCENT": &b.Accent} {
+			if v, ok := os.LookupEnv(env); ok {
+				*p = v
+				changed = true
+			}
+		}
+		if changed {
+			if err := saveBranding(b); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+		}
+		logoErr := false
+		if lp := strings.TrimSpace(os.Getenv("ATI_LOGO")); lp != "" {
+			if err := setLogoFromFile(lp); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				logf("installer logo: %v", err)
+				logoErr = true
+			}
+		}
 		if *network == "on" || *network == "off" {
 			cfg.AllowNetwork = *network == "on"
 			saveConfig()
 		}
 		logActivity("Installer", "system", "Database ready at "+dbPath())
 		db.Close()
+		if logoErr {
+			os.Exit(4)
+		}
 		return
 	}
 
@@ -129,7 +155,7 @@ func main() {
 	}
 
 	if err := prepareDataDir(); err != nil {
-		showMessage(appName, "The inventory could not start.\n\n"+err.Error()+"\n\nData folder: "+dataDir)
+		showMessage(productName, "The program could not start.\n\n"+err.Error()+"\n\nData folder: "+dataDir)
 		os.Exit(1)
 	}
 
@@ -152,7 +178,7 @@ func main() {
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, cfg.Port))
 	if err != nil {
-		showMessage(appName, fmt.Sprintf("The inventory could not start because port %d is in use by another program.\n\nChange \"port\" in %s and try again.", cfg.Port, filepath.Join(dataDir, "config.json")))
+		showMessage(productName, fmt.Sprintf("The program could not start because port %d is in use by another program.\n\nChange \"port\" in %s and try again.", cfg.Port, filepath.Join(dataDir, "config.json")))
 		os.Exit(1)
 	}
 	logf("started v%s on %s, data %s", appVersion, ln.Addr(), dataDir)
@@ -224,18 +250,18 @@ func resetPassword() {
 	exe, _ := os.Executable()
 	probe := filepath.Join(filepath.Dir(exe), ".admin-check")
 	if err := os.WriteFile(probe, []byte("x"), 0o644); err != nil {
-		showMessage(appName, "Resetting a password needs administrator rights.\n\nRight-click \"Reset Director Password\" and choose \"Run as administrator\".")
+		showMessage(productName, "Resetting a password needs administrator rights.\n\nRight-click \"Reset Director Password\" and choose \"Run as administrator\".")
 		return
 	}
 	os.Remove(probe)
 	if err := prepareDataDir(); err != nil {
-		showMessage(appName, err.Error())
+		showMessage(productName, err.Error())
 		return
 	}
 	var id int64
 	var name string
 	if err := db.QueryRow("SELECT id, username FROM users WHERE role='director' ORDER BY active DESC, last_login DESC LIMIT 1").Scan(&id, &name); err != nil {
-		showMessage(appName, "There is no director account yet. Open the inventory to create one.")
+		showMessage(productName, "There is no director account yet. Open the program to create one.")
 		return
 	}
 	temp := "Stage-" + strings.ToUpper(randomToken(3)) + "!"
@@ -244,5 +270,5 @@ func resetPassword() {
 	db.Exec("DELETE FROM sessions WHERE user_id=?", id)
 	logActivity("Administrator", "account", "Reset director password for "+name)
 	db.Close()
-	showMessage(appName, fmt.Sprintf("The director password has been reset.\n\nUsername:  %s\nTemporary password:  %s\n\nYou will be asked to choose a new password when you sign in.", name, temp))
+	showMessage(productName, fmt.Sprintf("The director password has been reset.\n\nUsername:  %s\nTemporary password:  %s\n\nYou will be asked to choose a new password when you sign in.", name, temp))
 }
