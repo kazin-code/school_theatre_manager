@@ -20,7 +20,17 @@ func defaultDataDir() string {
 	if pd == "" {
 		pd = `C:\ProgramData`
 	}
-	return filepath.Join(pd, "AHS Theatre Inventory")
+	cur := filepath.Join(pd, "AHS Theatre Application")
+	// version 1.0 used a different folder name; the installer renames it, this covers the rest
+	if st, err := os.Stat(cur); err != nil || !st.IsDir() {
+		old := filepath.Join(pd, "AHS Theatre Inventory")
+		if st, err := os.Stat(filepath.Join(old, "inventory.db")); err == nil && !st.IsDir() {
+			if os.Rename(old, cur) != nil {
+				return old
+			}
+		}
+	}
+	return cur
 }
 
 func hidden(cmd *exec.Cmd) *exec.Cmd {

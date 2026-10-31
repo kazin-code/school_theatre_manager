@@ -150,7 +150,19 @@ func routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/items/{id}", auth("", apiItem))
 	mux.HandleFunc("PUT /api/items/{id}", auth("", apiUpdateItem))
 	mux.HandleFunc("DELETE /api/items/{id}", auth("director", apiDeleteItem))
-	mux.HandleFunc("POST /api/items/{id}/photo", auth("", apiItemPhoto))
+	mux.HandleFunc("POST /api/items/{id}/photos", auth("", apiAddItemPhotos))
+	mux.HandleFunc("PUT /api/item-photos/{id}", auth("", apiUpdateItemPhoto))
+	mux.HandleFunc("DELETE /api/item-photos/{id}", auth("", apiDeleteItemPhoto))
+	mux.HandleFunc("POST /api/shows/{id}/people", auth("", apiAddPeople))
+	mux.HandleFunc("PUT /api/show-people/{id}", auth("", apiUpdatePerson))
+	mux.HandleFunc("DELETE /api/show-people/{id}", auth("", apiDeletePerson))
+	mux.HandleFunc("POST /api/shows/{id}/numbers", auth("", apiAddNumbers))
+	mux.HandleFunc("PUT /api/show-numbers/{id}", auth("", apiUpdateNumber))
+	mux.HandleFunc("DELETE /api/show-numbers/{id}", auth("", apiDeleteNumber))
+	mux.HandleFunc("POST /api/shows/{id}/files", auth("", apiAddShowFiles))
+	mux.HandleFunc("PUT /api/show-files/{id}", auth("", apiUpdateShowFile))
+	mux.HandleFunc("DELETE /api/show-files/{id}", auth("", apiDeleteShowFile))
+	mux.HandleFunc("GET /files/show/{name}", auth("", apiShowFile))
 	mux.HandleFunc("POST /api/items/{id}/condition", auth("", apiItemCondition))
 	mux.HandleFunc("GET /photos/{name}", auth("", apiPhoto))
 
@@ -198,7 +210,7 @@ func userCount() int {
 }
 
 func apiSetupStatus(w http.ResponseWriter, r *http.Request) {
-	jout(w, map[string]any{"needs_setup": userCount() == 0})
+	jout(w, map[string]any{"needs_setup": userCount() == 0, "password_rule": passwordRule})
 }
 
 // apiSetup creates the first director account when the installer did not.
@@ -252,6 +264,10 @@ func apiLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	clearFailures(name)
 	db.Exec("UPDATE users SET last_login=? WHERE id=?", now(), id)
+	// passwords set before the stronger rule must be replaced at this sign-in
+	if validatePassword(str(b["password"])) != nil {
+		db.Exec("UPDATE users SET must_change=1 WHERE id=?", id)
+	}
 	startSession(w, id, b["remember"] == true)
 	logActivity(name, "sign-in", "Signed in")
 	jout(w, map[string]any{"ok": true})
@@ -471,7 +487,8 @@ const itemSelect = `SELECT * FROM (SELECT i.*,
   (SELECT COALESCE(SUM(ri.qty),0) FROM rental_items ri JOIN rentals r ON r.id=ri.rental_id WHERE ri.item_id=i.id AND r.status='out') rent_out,
   (SELECT COALESCE(SUM(si.qty),0) FROM show_items si WHERE si.item_id=i.id AND si.date_returned IS NULL) show_out,
   (SELECT COUNT(DISTINCT si.show_id) FROM show_items si WHERE si.item_id=i.id) show_count,
-  (SELECT COUNT(*) FROM rental_items ri WHERE ri.item_id=i.id) rental_count
+  (SELECT COUNT(*) FROM rental_items ri WHERE ri.item_id=i.id) rental_count,
+  (SELECT COUNT(*) FROM item_photos ip WHERE ip.item_id=i.id) photo_count
   FROM items i) x`
 
 var measureCols = []string{"chest", "waist", "hips", "inseam", "neck", "sleeve", "head"}
@@ -660,7 +677,7 @@ func apiItem(w http.ResponseWriter, r *http.Request) {
 	shows, _ := qmaps(db, `SELECT si.*, s.title, s.type, s.season, s.year, s.open_date, s.close_date, s.director
 		FROM show_items si JOIN shows s ON s.id=si.show_id WHERE si.item_id=? ORDER BY COALESCE(s.open_date, si.date_out) DESC`, id)
 	conds, _ := qmaps(db, "SELECT * FROM condition_log WHERE item_id=? ORDER BY id DESC", id)
-	jout(w, map[string]any{"item": item, "rentals": rentals, "shows": shows, "conditions": conds})
+	jout(w, map[string]any{"item": item, "rentals": rentals, "shows": shows, "conditions": conds, "photos": itemPhotos(id)})
 }
 
 func apiUpdateItem(w http.ResponseWriter, r *http.Request) {
@@ -734,10 +751,8 @@ func apiDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	db.Exec("DELETE FROM condition_log WHERE item_id=?", id)
+	deleteItemPhotos(id)
 	db.Exec("DELETE FROM items WHERE id=?", id)
-	if p := str(it["photo"]); p != "" {
-		os.Remove(filepath.Join(photoDir(), p))
-	}
 	logActivity(currentUser(r).Name(), "item", fmt.Sprintf("Deleted %s %s", str(it["tag"]), str(it["name"])))
 	jout(w, map[string]any{"ok": true})
 }
@@ -745,49 +760,6 @@ func apiDeleteItem(w http.ResponseWriter, r *http.Request) {
 var safeName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
 func photoDir() string { return filepath.Join(dataDir, "photos") }
-
-func apiItemPhoto(w http.ResponseWriter, r *http.Request) {
-	id := pathID(r)
-	it := getItem(id)
-	if it == nil {
-		jerr(w, 404, "That item doesn't exist.")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
-	if r.URL.Query().Get("remove") == "1" {
-		if p := str(it["photo"]); p != "" {
-			os.Remove(filepath.Join(photoDir(), p))
-		}
-		db.Exec("UPDATE items SET photo=NULL WHERE id=?", id)
-		jout(w, map[string]any{"ok": true})
-		return
-	}
-	f, hdr, err := r.FormFile("photo")
-	if err != nil {
-		jerr(w, 400, "Choose a photo under 20 MB.")
-		return
-	}
-	defer f.Close()
-	ext := strings.ToLower(filepath.Ext(hdr.Filename))
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" && ext != ".gif" {
-		jerr(w, 400, "Photos must be JPG, PNG, WEBP or GIF files.")
-		return
-	}
-	os.MkdirAll(photoDir(), 0o755)
-	name := fmt.Sprintf("item-%d-%d%s", id, time.Now().Unix(), ext)
-	out, err := os.Create(filepath.Join(photoDir(), name))
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	io.Copy(out, f)
-	out.Close()
-	if p := str(it["photo"]); p != "" {
-		os.Remove(filepath.Join(photoDir(), p))
-	}
-	db.Exec("UPDATE items SET photo=?, updated_at=?, updated_by=? WHERE id=?", name, now(), currentUser(r).Name(), id)
-	jout(w, map[string]any{"photo": name})
-}
 
 func apiPhoto(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
@@ -1207,7 +1179,12 @@ func apiShows(w http.ResponseWriter, r *http.Request) {
 	}
 	s := `SELECT s.*, (SELECT COUNT(*) FROM show_items WHERE show_id=s.id) lines,
 		(SELECT SUM(qty) FROM show_items WHERE show_id=s.id) pieces,
-		(SELECT SUM(qty) FROM show_items WHERE show_id=s.id AND date_returned IS NULL) out_pieces FROM shows s`
+		(SELECT SUM(qty) FROM show_items WHERE show_id=s.id AND date_returned IS NULL) out_pieces,
+		(SELECT COUNT(*) FROM show_people WHERE show_id=s.id AND kind='cast') cast_count,
+		(SELECT COUNT(*) FROM show_people WHERE show_id=s.id AND kind!='cast') crew_count,
+		(SELECT COUNT(*) FROM show_files WHERE show_id=s.id AND kind='photo') photo_count,
+		(SELECT COUNT(*) FROM show_files WHERE show_id=s.id AND kind='material') material_count,
+		(SELECT COUNT(*) FROM show_numbers WHERE show_id=s.id) number_count FROM shows s`
 	if len(where) > 0 {
 		s += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -1248,7 +1225,7 @@ func apiShow(w http.ResponseWriter, r *http.Request) {
 	}
 	lines, _ := qmaps(db, `SELECT si.*, i.tag, i.name, i.category, i.subcategory, i.size, i.era, i.color, i.photo, i.location, i.condition current_condition
 		FROM show_items si JOIN items i ON i.id=si.item_id WHERE si.show_id=? ORDER BY si.character IS NULL, si.character COLLATE NOCASE, i.category, i.name`, id)
-	jout(w, map[string]any{"show": s, "items": lines})
+	jout(w, map[string]any{"show": s, "items": lines, "people": showPeople(id), "numbers": showNumbers(id), "materials": showFiles(id, "material"), "photos": showFiles(id, "photo")})
 }
 
 func apiUpdateShow(w http.ResponseWriter, r *http.Request) {
@@ -1282,6 +1259,7 @@ func apiDeleteShow(w http.ResponseWriter, r *http.Request) {
 	}
 	var t string
 	db.QueryRow("SELECT title FROM shows WHERE id=?", id).Scan(&t)
+	deleteShowMedia(id)
 	db.Exec("DELETE FROM shows WHERE id=?", id)
 	logActivity(currentUser(r).Name(), "show", "Deleted show "+t)
 	jout(w, map[string]any{"ok": true})
@@ -1460,6 +1438,14 @@ func apiExport(w http.ResponseWriter, r *http.Request) {
 			i.tag "Tag", i.name "Item", i.category "Category", si.qty "Qty", si.character "Character", si.actor "Actor", si.scene "Scene / Act",
 			si.usage_notes "How used", si.alterations "Alterations", si.date_out "Out", si.condition_out "Cond. out", si.date_returned "Returned", si.condition_in "Cond. in", si.notes_in "Return notes"
 			FROM show_items si JOIN shows s ON s.id=si.show_id JOIN items i ON i.id=si.item_id ORDER BY s.year, s.title, si.character`
+	case "people.csv":
+		q = `SELECT s.title "Show", s.season "Season", s.year "Year",
+			CASE p.kind WHEN 'team' THEN 'Production team' WHEN 'cast' THEN 'Cast' WHEN 'pit' THEN 'Pit orchestra' ELSE 'Crew' END "Group",
+			p.name "Name", p.role "Role / position / instrument", p.voice_part "Voice part", p.grade "Grade", p.email "Email", p.phone "Phone", p.notes "Notes"
+			FROM show_people p JOIN shows s ON s.id=p.show_id ORDER BY s.year, s.title, CASE p.kind WHEN 'team' THEN 0 WHEN 'cast' THEN 1 WHEN 'pit' THEN 2 ELSE 3 END, p.sort`
+	case "numbers.csv":
+		q = `SELECT s.title "Show", s.season "Season", s.year "Year", n.act "Act", n.number "No.", n.title "Song", n.singers "Sung by", n.scene "Scene", n.notes "Notes"
+			FROM show_numbers n JOIN shows s ON s.id=n.show_id ORDER BY s.year, s.title, n.sort`
 	default:
 		http.NotFound(w, r)
 		return

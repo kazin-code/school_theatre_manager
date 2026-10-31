@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 const pbkdfIter = 310000
@@ -47,11 +48,45 @@ func checkPassword(pw, stored string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
+// passwordRule is shown wherever people choose a password.
+const passwordRule = "Use at least 8 characters, including a capital letter and a special character such as ! @ # $ % &."
+
 func validatePassword(pw string) error {
-	if len(pw) < 8 {
-		return errors.New("Password must be at least 8 characters.")
+	var upper, special bool
+	n := 0
+	for _, r := range pw {
+		n++
+		switch {
+		case unicode.IsUpper(r):
+			upper = true
+		case !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r):
+			special = true
+		}
+	}
+	missing := []string{}
+	if n < 8 {
+		missing = append(missing, "at least 8 characters")
+	}
+	if !upper {
+		missing = append(missing, "a capital letter")
+	}
+	if !special {
+		missing = append(missing, "a special character such as ! @ # $ % &")
+	}
+	if len(missing) > 0 {
+		return errors.New("The password needs " + joinAnd(missing) + ".")
 	}
 	return nil
+}
+
+func joinAnd(parts []string) string {
+	switch len(parts) {
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + " and " + parts[1]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 func validUsername(u string) error {

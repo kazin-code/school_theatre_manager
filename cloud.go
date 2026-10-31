@@ -17,7 +17,10 @@ import (
 // Cloud backup: after changes, a copy of the database and any new photos is written into a
 // folder that OneDrive / Google Drive / Dropbox keeps synced to the cloud.
 
-const mirrorSub = "AHS Theatre Inventory Backup"
+const (
+	mirrorSub    = "AHS Theatre Application Backup"
+	oldMirrorSub = "AHS Theatre Inventory Backup" // version 1.0
+)
 
 var (
 	syncMu      sync.Mutex
@@ -30,7 +33,20 @@ func mirrorRoot() string {
 	if cfg.MirrorFolder == "" {
 		return ""
 	}
-	return filepath.Join(cfg.MirrorFolder, mirrorSub)
+	cur := filepath.Join(cfg.MirrorFolder, mirrorSub)
+	if _, err := os.Stat(cur); err != nil {
+		if old := filepath.Join(cfg.MirrorFolder, oldMirrorSub); dirExists(old) {
+			if os.Rename(old, cur) != nil {
+				return old
+			}
+		}
+	}
+	return cur
+}
+
+func dirExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }
 
 func saveConfig() error {
@@ -87,7 +103,7 @@ func syncNow() error {
 		if _, err := os.Stat(cfg.MirrorFolder); err != nil {
 			return fmt.Errorf("The cloud folder %s can't be reached. Is OneDrive/Google Drive signed in?", cfg.MirrorFolder)
 		}
-		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos")} {
+		for _, d := range []string{root, filepath.Join(root, "daily"), filepath.Join(root, "photos"), filepath.Join(root, "showfiles")} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				return err
 			}
@@ -118,18 +134,20 @@ func syncNow() error {
 			os.Remove(filepath.Join(root, "daily", names[0]))
 			names = names[1:]
 		}
-		// photos: copy any that aren't there yet
-		pents, _ := os.ReadDir(photoDir())
-		for _, e := range pents {
-			dst := filepath.Join(root, "photos", e.Name())
-			if _, err := os.Stat(dst); err == nil {
-				continue
-			}
-			if err := copyFile(filepath.Join(photoDir(), e.Name()), dst); err != nil {
-				return err
+		// photos and show files: copy any that aren't there yet
+		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir()} {
+			ents, _ := os.ReadDir(local)
+			for _, e := range ents {
+				dst := filepath.Join(root, sub, e.Name())
+				if _, err := os.Stat(dst); err == nil {
+					continue
+				}
+				if err := copyFile(filepath.Join(local, e.Name()), dst); err != nil {
+					return err
+				}
 			}
 		}
-		os.WriteFile(filepath.Join(root, "README.txt"), []byte("These files are automatic backups from AHS Theatre Inventory.\r\n\r\nTo restore on a new computer: install AHS Theatre Inventory, sign in as director,\r\nopen Settings > Cloud backup, choose this folder and click Restore.\r\n\r\nDo not edit these files.\r\n"), 0o644)
+		os.WriteFile(filepath.Join(root, "README.txt"), []byte("These files are automatic backups from the AHS Theatre Application.\r\n\r\nTo restore on a new computer: install the AHS Theatre Application, sign in as director,\r\nopen Settings > Cloud backup, choose this folder and click Restore.\r\n\r\nDo not edit these files.\r\n"), 0o644)
 		return nil
 	}()
 	syncMu.Lock()
@@ -307,12 +325,15 @@ func apiRestore(w http.ResponseWriter, r *http.Request) {
 	initSchema()
 	restored := 0
 	if str(b["source"]) == "cloud" {
-		ents, _ := os.ReadDir(filepath.Join(mirrorRoot(), "photos"))
-		for _, e := range ents {
-			dst := filepath.Join(photoDir(), e.Name())
-			if _, err := os.Stat(dst); err != nil {
-				if copyFile(filepath.Join(mirrorRoot(), "photos", e.Name()), dst) == nil {
-					restored++
+		for sub, local := range map[string]string{"photos": photoDir(), "showfiles": showFileDir()} {
+			os.MkdirAll(local, 0o755)
+			ents, _ := os.ReadDir(filepath.Join(mirrorRoot(), sub))
+			for _, e := range ents {
+				dst := filepath.Join(local, e.Name())
+				if _, err := os.Stat(dst); err != nil {
+					if copyFile(filepath.Join(mirrorRoot(), sub, e.Name()), dst) == nil {
+						restored++
+					}
 				}
 			}
 		}

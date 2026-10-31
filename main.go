@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	appName    = "AHS Theatre Inventory"
-	appID      = "ahs-theatre-inventory"
-	appVersion = "1.0.0"
+	appName    = "AHS Theatre Application"
+	appID      = "ahs-theatre-app"
+	appVersion = "1.1.0"
 )
 
 //go:embed web
@@ -60,7 +60,7 @@ func loadConfig() {
 }
 
 func prepareDataDir() error {
-	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "backups")} {
+	for _, d := range []string{dataDir, filepath.Join(dataDir, "photos"), filepath.Join(dataDir, "showfiles"), filepath.Join(dataDir, "backups")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return fmt.Errorf("could not create %s: %w", d, err)
 		}
@@ -238,7 +238,7 @@ func resetPassword() {
 		showMessage(appName, "There is no director account yet. Open the inventory to create one.")
 		return
 	}
-	temp := strings.ToUpper(randomToken(3)) + "-" + strings.ToUpper(randomToken(3))
+	temp := "Stage-" + strings.ToUpper(randomToken(3)) + "!"
 	h, _ := hashPassword(temp)
 	db.Exec("UPDATE users SET pw_hash=?, must_change=1, active=1 WHERE id=?", h, id)
 	db.Exec("DELETE FROM sessions WHERE user_id=?", id)

@@ -12,7 +12,7 @@ import (
 
 var db *sql.DB
 
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 const schema = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -174,6 +174,59 @@ CREATE TABLE IF NOT EXISTS activity (
   details TEXT
 );
 
+CREATE TABLE IF NOT EXISTS item_photos (
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES items(id),
+  file TEXT NOT NULL,
+  caption TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS show_people (
+  id INTEGER PRIMARY KEY,
+  show_id INTEGER NOT NULL REFERENCES shows(id),
+  kind TEXT NOT NULL DEFAULT 'cast',
+  name TEXT NOT NULL,
+  role TEXT,
+  grade TEXT,
+  email TEXT,
+  phone TEXT,
+  notes TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS show_files (
+  id INTEGER PRIMARY KEY,
+  show_id INTEGER NOT NULL REFERENCES shows(id),
+  kind TEXT NOT NULL DEFAULT 'material',
+  file TEXT NOT NULL,
+  original_name TEXT,
+  size INTEGER,
+  category TEXT,
+  caption TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS show_numbers (
+  id INTEGER PRIMARY KEY,
+  show_id INTEGER NOT NULL REFERENCES shows(id),
+  act TEXT,
+  number TEXT,
+  title TEXT NOT NULL,
+  singers TEXT,
+  scene TEXT,
+  notes TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, created_by TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_sn_show ON show_numbers(show_id);
+CREATE INDEX IF NOT EXISTS ix_ip_item ON item_photos(item_id);
+CREATE INDEX IF NOT EXISTS ix_sp_show ON show_people(show_id);
+CREATE INDEX IF NOT EXISTS ix_sf_show ON show_files(show_id);
 CREATE INDEX IF NOT EXISTS ix_ri_item ON rental_items(item_id);
 CREATE INDEX IF NOT EXISTS ix_ri_rental ON rental_items(rental_id);
 CREATE INDEX IF NOT EXISTS ix_si_item ON show_items(item_id);
@@ -183,16 +236,21 @@ CREATE INDEX IF NOT EXISTS ix_rentals_renter ON rentals(renter_id);
 `
 
 var defaultLookups = map[string][]string{
-	"category":    {"Costumes", "Shoes", "Hats & Headwear", "Wigs & Hair", "Accessories & Jewelry", "Props", "Hand Props", "Furniture", "Set Pieces", "Flats & Platforms", "Drapes & Soft Goods", "Fabric & Materials", "Lighting", "Sound", "Makeup & FX", "Tools & Hardware", "Other"},
-	"subcategory": {"Dress / Gown", "Suit / Jacket", "Coat / Cape", "Shirt / Blouse", "Vest / Waistcoat", "Skirt", "Trousers / Breeches", "Uniform", "Robe", "Underpinnings / Corset / Petticoat", "Animal / Character Suit", "Chair", "Table", "Sofa / Settee", "Bed", "Desk", "Cabinet / Shelf", "Lamp", "Weapon (prop)", "Tableware", "Luggage", "Sign"},
-	"era":         {"Ancient / Classical", "Medieval", "Renaissance / Elizabethan", "17th Century", "18th Century / Colonial", "Regency (1800–1830)", "Victorian (1837–1901)", "Old West", "Edwardian (1901–1914)", "1920s", "1930s", "1940s", "1950s", "1960s", "1970s", "1980s", "1990s", "Contemporary", "Fantasy / Storybook", "Sci-Fi / Futuristic", "Military", "Period-neutral"},
-	"gender":      {"Men's", "Women's", "Unisex", "Boys'", "Girls'"},
-	"size":        {"XS", "S", "M", "L", "XL", "2XL", "3XL", "Child S", "Child M", "Child L", "One size", "Adjustable"},
-	"material":    {"Cotton", "Wool", "Silk", "Satin", "Velvet", "Polyester", "Linen", "Lace", "Denim", "Leather", "Faux fur", "Brocade", "Chiffon", "Tulle", "Spandex", "Wood", "Metal", "Plastic", "Foam", "Upholstered", "Glass", "Wicker", "Cardboard / Paper"},
-	"color":       {"Black", "White", "Ivory", "Red", "Burgundy", "Pink", "Orange", "Yellow", "Gold", "Green", "Blue", "Navy", "Purple", "Brown", "Tan", "Grey", "Silver", "Multicolor"},
-	"location":    {"Costume Room", "Costume Room – Rack A", "Costume Room – Rack B", "Costume Room – Bins", "Prop Cage", "Scene Shop", "Under Stage", "Loft", "Off-site Storage"},
-	"show_type":   {"Play", "Musical", "One-Acts", "Revue / Showcase", "Children's Theatre", "Other"},
-	"season":      {"Fall", "Winter", "Spring", "Summer"},
+	"category":      {"Costumes", "Shoes", "Hats & Headwear", "Wigs & Hair", "Accessories & Jewelry", "Props", "Hand Props", "Furniture", "Set Pieces", "Flats & Platforms", "Drapes & Soft Goods", "Fabric & Materials", "Lighting", "Sound", "Makeup & FX", "Tools & Hardware", "Other"},
+	"subcategory":   {"Dress / Gown", "Suit / Jacket", "Coat / Cape", "Shirt / Blouse", "Vest / Waistcoat", "Skirt", "Trousers / Breeches", "Uniform", "Robe", "Underpinnings / Corset / Petticoat", "Animal / Character Suit", "Chair", "Table", "Sofa / Settee", "Bed", "Desk", "Cabinet / Shelf", "Lamp", "Weapon (prop)", "Tableware", "Luggage", "Sign"},
+	"era":           {"Ancient / Classical", "Medieval", "Renaissance / Elizabethan", "17th Century", "18th Century / Colonial", "Regency (1800–1830)", "Victorian (1837–1901)", "Old West", "Edwardian (1901–1914)", "1920s", "1930s", "1940s", "1950s", "1960s", "1970s", "1980s", "1990s", "Contemporary", "Fantasy / Storybook", "Sci-Fi / Futuristic", "Military", "Period-neutral"},
+	"gender":        {"Men's", "Women's", "Unisex", "Boys'", "Girls'"},
+	"size":          {"XS", "S", "M", "L", "XL", "2XL", "3XL", "Child S", "Child M", "Child L", "One size", "Adjustable"},
+	"material":      {"Cotton", "Wool", "Silk", "Satin", "Velvet", "Polyester", "Linen", "Lace", "Denim", "Leather", "Faux fur", "Brocade", "Chiffon", "Tulle", "Spandex", "Wood", "Metal", "Plastic", "Foam", "Upholstered", "Glass", "Wicker", "Cardboard / Paper"},
+	"color":         {"Black", "White", "Ivory", "Red", "Burgundy", "Pink", "Orange", "Yellow", "Gold", "Green", "Blue", "Navy", "Purple", "Brown", "Tan", "Grey", "Silver", "Multicolor"},
+	"location":      {"Costume Room", "Costume Room – Rack A", "Costume Room – Rack B", "Costume Room – Bins", "Prop Cage", "Scene Shop", "Under Stage", "Loft", "Off-site Storage"},
+	"show_type":     {"Play", "Musical", "One-Acts", "Revue / Showcase", "Children's Theatre", "Other"},
+	"season":        {"Fall", "Winter", "Spring", "Summer"},
+	"team_position": {"Director", "Assistant Director", "Technical Director", "Music Director", "Vocal Director", "Choreographer", "Assistant Choreographer", "Stage Manager", "Assistant Stage Manager", "Producer", "Accompanist", "Pit Conductor", "Costume Designer", "Set Designer", "Lighting Designer", "Sound Designer", "Hair & Makeup Designer", "Props Master", "Fight / Intimacy Director", "Dramaturg", "Dance Captain"},
+	"crew_position": {"Light Board Operator", "Sound Board Operator", "Spotlight Operator", "Fly Rail", "Running Crew", "Deck Crew", "Set Construction", "Scenic Painter", "Props Crew", "Costume Crew", "Wardrobe / Dresser", "Hair & Makeup Crew", "Mic Wrangler", "Pit Orchestra", "House Manager", "Usher", "Box Office", "Concessions", "Publicity", "Photographer", "Videographer"},
+	"voice_part":    {"Soprano", "Mezzo-Soprano", "Alto", "Tenor", "Baritone", "Bass", "Treble", "Non-singing"},
+	"instrument":    {"Conductor", "Piano", "Keyboard 1", "Keyboard 2", "Synthesizer", "Guitar", "Bass", "Drums", "Percussion", "Violin", "Viola", "Cello", "Flute", "Clarinet", "Reed 1", "Reed 2", "Saxophone", "Trumpet", "Trombone", "French Horn"},
+	"material_type": {"Script", "Libretto", "Vocal score", "Piano / conductor score", "Orchestra parts", "Rehearsal tracks", "Choreography notes", "Program", "Poster / Artwork", "Rehearsal schedule", "Blocking notes", "Design drawings", "Costume plot", "Prop list", "Light plot", "Sound cues", "Rights & licensing", "Budget", "Forms & permissions", "Other"},
 }
 
 func now() string   { return time.Now().Format("2006-01-02 15:04:05") }
@@ -229,6 +287,7 @@ func initSchema() error {
 			}
 		}
 	}
+	migrate()
 	db.Exec("INSERT OR IGNORE INTO meta(key,value) VALUES('created_at',?)", now())
 	db.Exec("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", schemaVersion)
 	return nil

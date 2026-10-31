@@ -1,5 +1,5 @@
 "use strict";
-/* AHS Theatre Inventory — browser interface. Talks to the local server at /api. */
+/* AHS Theatre Application — browser interface. Talks to the local server at /api. */
 
 // ---------- tiny templating ----------
 class Safe { constructor(s) { this.s = s; } toString() { return this.s; } }
@@ -24,6 +24,7 @@ const ICON = {
   list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
   hanger: '<path d="M12 7a2 2 0 1 1 2-2"/><path d="M12 7v1.5L3 15h18l-9-6.5"/><path d="M3 15v2h18v-2"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
   camera: '<path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/>',
 };
 const icon = (n) => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ""}</svg>`);
@@ -41,7 +42,7 @@ async function api(method, url, data) {
   if (data instanceof FormData) opt.body = data;
   else if (data !== undefined) { opt.body = JSON.stringify(data); opt.headers["Content-Type"] = "application/json"; }
   let res;
-  try { res = await fetch(url, opt); } catch { throw new ApiError("The inventory program isn't running. Open it from the desktop shortcut, then try again.", 0); }
+  try { res = await fetch(url, opt); } catch { throw new ApiError("The AHS Theatre Application isn't running. Open it from the desktop shortcut, then try again.", 0); }
   let body = null;
   try { body = await res.json(); } catch {}
   if (res.status === 401 && !url.startsWith("/api/login")) { S.me = null; renderLogin(); throw new ApiError("Please sign in.", 401); }
@@ -122,7 +123,8 @@ function formData(form) {
   const o = {};
   for (const el of form.elements) {
     if (!el.name || el.disabled) continue;
-    if (el.type === "checkbox") o[el.name] = el.checked;
+    if (el.type === "radio") { if (el.checked) o[el.name] = el.value; }
+    else if (el.type === "checkbox") o[el.name] = el.checked;
     else if (NUMERIC.has(el.name)) o[el.name] = el.value === "" ? null : Number(el.value);
     else o[el.name] = el.value;
   }
@@ -147,7 +149,7 @@ function shell(active, content) {
   const pullN = S.pull.length;
   $("#app").innerHTML = h`<div class="shell">
     <aside class="side no-print">
-      <div class="brand"><img src="logo.png" alt="AHS Theatre"><div><b>AHS Theatre</b><span>Inventory</span></div></div>
+      <div class="brand"><img src="logo.png" alt="AHS Theatre"><div><b>AHS Theatre</b><span>Application</span></div></div>
       <nav class="nav">${NAV.map((n) => n ? h`<a href="#/${n[0]}" class="${active === n[0] ? "on" : ""}">${icon(n[2])}${n[1]}${n[0] === "pull" ? h`<span class="badge" id="pullbadge" ${pullN ? "" : raw("hidden")}>${pullN}</span>` : ""}${n[0] === "rentals" && S.overdue ? h`<span class="badge">${S.overdue} late</span>` : ""}</a>` : h`<div class="sep"></div>`)}</nav>
       <div class="who"><div><b>${S.me.display_name || S.me.username}</b>${S.me.role === "director" ? "Director" : "Assistant"}</div><button id="signout">Sign out</button></div>
     </aside>
@@ -168,9 +170,21 @@ function addToPull(it, qty = 1) {
   savePull(); toast(`Added ${it.name} to the pull list`);
 }
 
+// ---------- password rule ----------
+const PW_RULE = "At least 8 characters, including a capital letter and a special character such as ! @ # $ % &.";
+const pwChecks = (pw) => [[pw.length >= 8, "8 or more characters"], [/\p{Lu}/u.test(pw), "a capital letter"], [/[^\p{L}\p{N}\s]/u.test(pw), "a special character (! @ # $ % & …)"]];
+const pwOK = (pw) => pwChecks(pw).every(([ok]) => ok);
+// Shows a live checklist under a new-password field.
+function pwMeter(input) {
+  const box = document.createElement("ul"); box.className = "pwcheck"; box.setAttribute("aria-live", "polite");
+  input.insertAdjacentElement("afterend", box);
+  const draw = () => { box.innerHTML = pwChecks(input.value).map(([ok, t]) => h`<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${t}</li>`.s).join(""); };
+  input.addEventListener("input", draw); draw();
+}
+
 // ---------- auth screens ----------
 function authFrame(inner) {
-  $("#app").innerHTML = h`<div class="login"><div class="curtain"><img src="logo.png" alt="AHS Theatre logo"><h1>AHS Theatre Inventory</h1><p>Costumes, props, furniture and set pieces: what we own, where it is, and every show it has been in.</p></div>${inner}</div>`.s;
+  $("#app").innerHTML = h`<div class="login"><div class="curtain"><img src="logo.png" alt="AHS Theatre logo"><h1>AHS Theatre Application</h1><p>Shows, cast and crew, costumes, props and set pieces: what we own, where it is, and every production it has been part of.</p></div>${inner}</div>`.s;
 }
 async function renderLogin() {
   let setup = false;
@@ -194,35 +208,39 @@ async function renderLogin() {
 }
 function renderSetup() {
   authFrame(h`<form id="setupf" novalidate>
-    <div><h2>Create the director account</h2><p class="muted small">This account owns the inventory. It can add other users, change settings and restore backups.</p></div>
+    <div><h2>Create the director account</h2><p class="muted small">This account owns the AHS Theatre Application. It can add other users, change settings and restore backups.</p></div>
     <div class="errbox" hidden></div>
     ${fld("Your name", h`<input type="text" name="display_name" id="sd" placeholder="e.g. Ms. Rivera">`)}
     ${fld("Username", h`<input type="text" name="username" id="su" autocomplete="username">`, "", "Letters, numbers, dots or dashes.")}
-    ${fld("Password", h`<input type="password" name="password" id="sp" autocomplete="new-password">`, "", "At least 8 characters.")}
+    ${fld("Password", h`<input type="password" name="password" id="sp" autocomplete="new-password">`)}
     ${fld("Confirm password", h`<input type="password" name="confirm" id="sc" autocomplete="new-password">`)}
     <button class="btn primary" style="justify-content:center;padding:10px">Create account</button>
   </form>`);
   const f = $("#setupf");
+  pwMeter($("#sp"));
   f.onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(f), eb = $(".errbox", f);
+    if (!pwOK(d.password)) { eb.textContent = "Choose a stronger password. " + PW_RULE; eb.hidden = false; return; }
     if (d.password !== d.confirm) { eb.textContent = "The two passwords don't match."; eb.hidden = false; return; }
     try { await api("POST", "/api/setup", d); await boot(); } catch (err) { eb.textContent = err.message; eb.hidden = false; }
   };
 }
 function renderMustChange() {
   authFrame(h`<form id="mcf" novalidate>
-    <div><h2>Choose a new password</h2><p class="muted small">You're signed in with a temporary password. Pick one only you know.</p></div>
+    <div><h2>Choose a new password</h2><p class="muted small">Your password is temporary or doesn't meet the new security rule. Pick a new one only you know.</p></div>
     <div class="errbox" hidden></div>
-    ${fld("Temporary password", h`<input type="password" name="current" id="mc0" autocomplete="current-password">`)}
-    ${fld("New password", h`<input type="password" name="new" id="mc1" autocomplete="new-password">`, "", "At least 8 characters.")}
+    ${fld("Current password", h`<input type="password" name="current" id="mc0" autocomplete="current-password">`)}
+    ${fld("New password", h`<input type="password" name="new" id="mc1" autocomplete="new-password">`)}
     ${fld("Confirm new password", h`<input type="password" name="confirm" id="mc2" autocomplete="new-password">`)}
     <button class="btn primary" style="justify-content:center;padding:10px">Save password</button>
   </form>`);
   const f = $("#mcf");
+  pwMeter($("#mc1"));
   f.onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(f), eb = $(".errbox", f);
+    if (!pwOK(d.new)) { eb.textContent = "Choose a stronger password. " + PW_RULE; eb.hidden = false; return; }
     if (d.new !== d.confirm) { eb.textContent = "The two passwords don't match."; eb.hidden = false; return; }
     try { await api("POST", "/api/me/password", d); await boot(); } catch (err) { eb.textContent = err.message; eb.hidden = false; }
   };
@@ -246,6 +264,7 @@ const ROUTES = [
   [/^#\/shows$/, viewShows],
   [/^#\/shows\/new$/, () => viewShowForm(null)],
   [/^#\/show\/(\d+)$/, (m) => viewShow(+m[1])],
+  [/^#\/show\/(\d+)\/(people|numbers|materials|photos)$/, (m) => viewShow(+m[1], m[2])],
   [/^#\/show\/(\d+)\/edit$/, (m) => viewShowForm(+m[1])],
   [/^#\/pull$/, viewPull],
   [/^#\/activity$/, viewActivity],
@@ -287,7 +306,7 @@ async function viewDashboard() {
     <div class="quick no-print">
       <a class="btn primary" href="#/items/new">${icon("plus")}Add an item</a>
       <a class="btn" href="#/items">${icon("search")}Search inventory</a>
-      <a class="btn" href="#/shows">${icon("mask")}Check out to a show</a>
+      <a class="btn" href="#/shows/new">${icon("mask")}Create a show</a>
       <a class="btn" href="#/rentals/new">${icon("swap")}Start a rental</a>
     </div>
     <div class="stats">
@@ -410,7 +429,7 @@ async function runSearch() {
   if (invView === "grid") {
     res.innerHTML = h`<div class="cards">${items.map((i) => h`<article class="card" data-id="${i.id}">
       <div class="ph">${i.photo ? h`<img src="${photoURL(i.photo)}" alt="" loading="lazy">` : icon("hanger")}</div>
-      <button class="btn sm addpull" type="button" data-pull="${i.id}" title="Add to pull list">+ Pull</button>
+      <button class="btn sm addpull" type="button" data-pull="${i.id}" title="Add to pull list">+ Pull</button>${i.photo_count > 1 ? h`<span class="pcount">${i.photo_count} photos</span>` : ""}
       <div class="cb">${tag(i.tag)}<div class="nm">${i.name}</div>
         <div class="meta">${[i.era, i.gender, i.size && "Size " + i.size, i.color].filter(Boolean).join(" · ")}</div>
         <div class="foot">${availPill(i)}${condBadge(i.condition)}</div></div></article>`)}</div>`.s;
@@ -423,6 +442,77 @@ async function runSearch() {
     bindRows(res);
   }
   $$("[data-pull]", res).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); const it = lastItems.find((x) => x.id === +b.dataset.pull); if (it) addToPull(it); }));
+}
+
+// ---------- pictures & files: shared helpers ----------
+// Phone photos are often 4–8 MB. Shrink them in the browser before upload so the database,
+// backups and cloud copies stay small. Anything that can't be decoded is sent unchanged.
+async function shrinkImage(file, max = 2400, quality = 0.86) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 700 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch { return file; }
+}
+const fmtSize = (b) => b == null ? "" : b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + " KB" : (b / 1048576).toFixed(1) + " MB";
+const isImage = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif)$/i.test(f.name);
+
+// Upload files in small batches, reporting progress in a status element.
+async function uploadAll(url, field, files, { photos = false, extra = {}, status } = {}) {
+  const per = photos ? 6 : 1;
+  for (let i = 0; i < files.length; i += per) {
+    const batch = files.slice(i, i + per);
+    if (status) status.textContent = `Uploading ${Math.min(i + batch.length, files.length)} of ${files.length}…`;
+    const fd = new FormData();
+    for (const f of batch) fd.append(field, photos ? await shrinkImage(f) : f);
+    for (const [k, v] of Object.entries(extra)) if (v != null && v !== "") fd.append(k, v);
+    await api("POST", url, fd);
+  }
+  if (status) status.textContent = "";
+}
+
+// A drop area: click to choose, drag files onto it, or paste a copied picture.
+function dropzone(el, { accept = "", label, sub, onFiles }) {
+  el.classList.add("drop");
+  el.innerHTML = h`<input type="file" multiple ${accept ? raw(`accept="${accept}"`) : ""} hidden><div class="dz-l">${icon("upload")}<b>${label}</b></div><div class="small muted">${sub}</div><div class="dz-s small" aria-live="polite"></div>`.s;
+  const input = $("input", el);
+  const take = (list) => { const files = [...list].filter((f) => f.size > 0); if (files.length) onFiles(files, $(".dz-s", el)); };
+  el.tabIndex = 0; el.setAttribute("role", "button");
+  el.addEventListener("click", (e) => { if (e.target !== input) input.click(); });
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+  input.onchange = () => { take(input.files); input.value = ""; };
+  el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("over"); });
+  el.addEventListener("dragleave", () => el.classList.remove("over"));
+  el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("over"); take(e.dataTransfer.files); });
+  el.addEventListener("paste", (e) => take(e.clipboardData.files));
+  return el;
+}
+
+// Full-screen picture viewer with arrows and keyboard.
+function lightbox(list, start = 0) {
+  let i = start;
+  const root = document.createElement("div");
+  root.className = "lb"; root.setAttribute("role", "dialog"); root.setAttribute("aria-label", "Photo viewer");
+  const draw = () => {
+    const p = list[i];
+    root.innerHTML = h`<button class="lb-x" aria-label="Close">✕</button>
+      ${list.length > 1 ? h`<button class="lb-prev" aria-label="Previous photo">‹</button><button class="lb-next" aria-label="Next photo">›</button>` : ""}
+      <figure><img src="${p.src}" alt="${p.caption || ""}"><figcaption>${p.caption || ""}<span class="muted"> ${list.length > 1 ? `${i + 1} of ${list.length}` : ""}</span></figcaption></figure>`.s;
+    $(".lb-x", root).onclick = close;
+    if ($(".lb-prev", root)) { $(".lb-prev", root).onclick = (e) => { e.stopPropagation(); go(-1); }; $(".lb-next", root).onclick = (e) => { e.stopPropagation(); go(1); }; }
+  };
+  const go = (d) => { i = (i + d + list.length) % list.length; draw(); };
+  const key = (e) => { if (e.key === "Escape") close(); if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); };
+  function close() { document.removeEventListener("keydown", key); root.remove(); }
+  root.addEventListener("click", (e) => { if (e.target === root || e.target.tagName === "FIGURE") close(); });
+  document.addEventListener("keydown", key);
+  draw(); document.body.appendChild(root); $(".lb-x", root).focus();
 }
 
 // ---------- item detail ----------
@@ -440,14 +530,7 @@ async function viewItem(id) {
       <a class="btn" href="#/item/${id}/copy" title="Start a new item with the same details">Duplicate</a>
       <a class="btn dark" href="#/item/${id}/edit">Edit</a>`, h`<a href="#/items">Inventory</a> / ${it.tag}`)}
     <div class="itemtop">
-      <div>
-        <div class="photo" id="photo">${it.photo ? h`<img src="${photoURL(it.photo)}" alt="${it.name}">` : icon("camera")}</div>
-        <div class="no-print" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-          <label class="btn sm" for="photofile" style="margin:0;font-weight:500">${it.photo ? "Replace photo" : "Add a photo"}</label>
-          <input type="file" id="photofile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
-          ${it.photo ? h`<button class="btn sm ghost" id="rmphoto">Remove</button>` : ""}
-        </div>
-      </div>
+      <div id="gallery"></div>
       <div style="min-width:0">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">${tag(it.tag)}${condBadge(it.condition)}${it.rentable ? h`<span class="pill info">Rentable${it.rental_rate != null ? " · " + money(it.rental_rate) : ""}</span>` : h`<span class="pill mute">Not for rent</span>`}</div>
         ${it.description ? h`<p style="margin:0 0 14px;max-width:65ch">${it.description}</p>` : ""}
@@ -483,15 +566,10 @@ async function viewItem(id) {
     <div id="tagcard"><div class="bar"><img src="logo.png" alt=""><b>AHS Theatre</b></div><div class="t">${it.tag}</div><div class="n">${it.name}</div>
       <div class="small">${[it.category, it.era, it.gender, it.size && "Size " + it.size].filter(Boolean).join(" · ")}</div><div class="small">${meas}</div><div class="small">Home: ${it.location || "—"}</div></div>`);
   bindRows();
+  itemGallery($("#gallery"), it, d.photos);
   $$("[data-tab]").forEach((b) => (b.onclick = () => { $$("[data-tab]").forEach((x) => x.classList.toggle("on", x === b)); $$("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.tab)); }));
   $("#pullit").onclick = () => addToPull(it);
   $("#printtag").onclick = () => { document.body.classList.add("print-tag"); window.print(); setTimeout(() => document.body.classList.remove("print-tag"), 500); };
-  $("#photofile").onchange = async (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    const fd = new FormData(); fd.append("photo", f);
-    try { await api("POST", `/api/items/${id}/photo`, fd); toast("Photo saved"); viewItem(id); } catch (err) { toast(err.message, true); }
-  };
-  if ($("#rmphoto")) $("#rmphoto").onclick = () => confirmBox("Remove the photo?", "The photo file will be deleted from this computer.", "Remove photo", async () => { await api("POST", `/api/items/${id}/photo?remove=1`); viewItem(id); });
   $("#inspect").onclick = () => modal({
     title: "Record condition", ok: "Save condition",
     body: h`<div class="grid">${fld("Condition now", h`<select name="condition" id="m-cond">${condOptions(it.condition)}</select>`, "full")}
@@ -499,7 +577,44 @@ async function viewItem(id) {
       ${fld("What you found", h`<textarea name="notes" id="m-notes" rows="3" placeholder="e.g. Hem re-sewn, small stain on left cuff">${it.condition_notes || ""}</textarea>`, "full")}</div>`,
     onOk: async (f) => { await api("POST", `/api/items/${id}/condition`, formData(f)); toast("Condition recorded"); viewItem(id); },
   });
-  if ($("#delitem")) $("#delitem").onclick = () => confirmBox("Delete this item?", `${it.tag} ${it.name} will be removed permanently. Items with show or rental history can't be deleted; retire them instead.`, "Delete item", async () => { await api("DELETE", "/api/items/" + id); toast("Item deleted"); location.hash = "#/items"; });
+  if ($("#delitem")) $("#delitem").onclick = () => confirmBox("Delete this item?", `${it.tag} ${it.name} and its photos will be removed permanently. Items with show or rental history can't be deleted; retire them instead.`, "Delete item", async () => { await api("DELETE", "/api/items/" + id); toast("Item deleted"); location.hash = "#/items"; });
+}
+
+// Photo gallery for one item: big picture, thumbnail strip, captions, main photo, order, drop zone.
+function itemGallery(box, it, photos, cur = 0) {
+  cur = Math.min(cur, Math.max(photos.length - 1, 0));
+  const p = photos[cur];
+  const isMain = p && p.file === it.photo;
+  box.innerHTML = h`
+    <div class="photo ${p ? "has" : ""}" id="mainphoto" ${p ? raw('title="Click to view full screen"') : ""}>${p ? h`<img src="${photoURL(p.file)}" alt="${p.caption || it.name}">` : h`<div class="ph-empty">${icon("camera")}<span class="small">No photos yet</span></div>`}</div>
+    ${p ? h`<div class="pcap no-print"><span>${p.caption ? p.caption : h`<span class="muted">No caption</span>`}${isMain ? h` <span class="pill info">Main photo</span>` : ""}</span>
+      <span class="pact">${photos.length > 1 && !isMain ? h`<button class="btn sm" data-pa="main">Make main</button>` : ""}
+        <button class="btn sm ghost" data-pa="caption">Caption</button>
+        ${photos.length > 1 ? h`<button class="btn sm ghost" data-pa="left" ${cur === 0 ? raw("disabled") : ""} aria-label="Move earlier">←</button><button class="btn sm ghost" data-pa="right" ${cur === photos.length - 1 ? raw("disabled") : ""} aria-label="Move later">→</button>` : ""}
+        <button class="btn sm ghost danger" data-pa="delete">Delete</button></span></div>` : ""}
+    ${photos.length > 1 ? h`<div class="thumbs no-print">${photos.map((x, i) => h`<button type="button" class="${i === cur ? "on" : ""}" data-ti="${i}" aria-label="Photo ${i + 1}${x.caption ? ": " + x.caption : ""}"><img src="${photoURL(x.file)}" alt="" loading="lazy"></button>`)}</div>` : ""}
+    <div class="no-print" id="itemdrop" style="margin-top:10px"></div>`.s;
+  const redraw = (list, at = cur) => { it.photo = list.length ? (list.find((x) => x.file === it.photo) ? it.photo : list[0].file) : null; itemGallery(box, it, list, at); };
+  $$("[data-ti]", box).forEach((b) => (b.onclick = () => itemGallery(box, it, photos, +b.dataset.ti)));
+  if (p) $("#mainphoto", box).onclick = () => lightbox(photos.map((x) => ({ src: photoURL(x.file), caption: x.caption })), cur);
+  const act = async (a) => {
+    try {
+      if (a === "main") { const r = await api("PUT", "/api/item-photos/" + p.id, { main: true }); it.photo = p.file; toast("Main photo set"); redraw(r.photos, 0); }
+      if (a === "left" || a === "right") { const r = await api("PUT", "/api/item-photos/" + p.id, { move: a }); redraw(r.photos, cur + (a === "left" ? -1 : 1)); }
+      if (a === "caption") modal({ title: "Photo caption", body: h`<label for="cap">Caption</label><input type="text" id="cap" value="${p.caption || ""}" placeholder="e.g. Back view, Label inside collar, Tear on left sleeve">`,
+        onOk: async (f) => { const r = await api("PUT", "/api/item-photos/" + p.id, { caption: $("#cap", f).value }); redraw(r.photos); } });
+      if (a === "delete") confirmBox("Delete this photo?", "The picture will be removed from this item permanently.", "Delete photo", async () => { const r = await api("DELETE", "/api/item-photos/" + p.id); toast("Photo deleted"); redraw(r.photos, cur); });
+    } catch (err) { toast(err.message, true); }
+  };
+  $$("[data-pa]", box).forEach((b) => (b.onclick = () => act(b.dataset.pa)));
+  dropzone($("#itemdrop", box), { accept: "image/jpeg,image/png,image/webp,image/gif", label: photos.length ? "Add more photos" : "Add photos",
+    sub: "Click to choose, or drag pictures here. Front, back, labels, details: add as many as you like.",
+    onFiles: async (files, status) => {
+      const imgs = files.filter(isImage);
+      if (!imgs.length) { toast("Those files aren't photos. Use JPG, PNG, WEBP or GIF.", true); return; }
+      try { await uploadAll(`/api/items/${it.id}/photos`, "photo", imgs, { photos: true, status }); const d = await GET("/api/items/" + it.id); it.photo = d.item.photo; toast(`Added ${imgs.length} photo${imgs.length === 1 ? "" : "s"}`); itemGallery(box, it, d.photos, photos.length); }
+      catch (err) { status.textContent = ""; toast(err.message, true); }
+    } });
 }
 
 // ---------- item form ----------
@@ -727,12 +842,12 @@ function linesTable(lines, kind) {
       <td><select data-l="${i}" data-k="condition_out" aria-label="Condition going out">${condOptions(l.condition_out || l.condition)}</select></td>
       <td><input type="text" value="${l.notes_out || ""}" data-l="${i}" data-k="notes_out" placeholder="e.g. Missing one button" aria-label="Notes"></td>
       <td><button type="button" class="btn sm ghost" data-rml="${i}">Remove</button></td></tr>`)}</table></div>`;
-  return h`<div class="tablewrap"><table class="lines"><tr><th>Item</th><th style="width:70px">Qty</th><th>Character / use</th><th>Actor</th><th>Scene / act</th><th>How it's used</th><th></th></tr>
+  return h`<div class="tablewrap"><table class="lines"><tr><th>Item</th><th style="width:70px">Qty</th><th>Character / use</th><th>Actor</th><th>Scene / number</th><th>How it's used</th><th></th></tr>
     ${lines.map((l, i) => h`<tr><td>${tag(l.tag)} <b>${l.name}</b><div class="small muted">${[l.category, l.size].filter(Boolean).join(" · ")}</div></td>
       <td><input type="number" min="1" max="${l.max || 99}" value="${l.qty}" data-l="${i}" data-k="qty" aria-label="Quantity"></td>
       <td><input type="text" list="dl-characters" value="${l.character || ""}" data-l="${i}" data-k="character" placeholder="e.g. Mrs. Lovett" aria-label="Character"></td>
-      <td><input type="text" value="${l.actor || ""}" data-l="${i}" data-k="actor" aria-label="Actor"></td>
-      <td><input type="text" value="${l.scene || ""}" data-l="${i}" data-k="scene" placeholder="e.g. Act 1 Sc 3" aria-label="Scene"></td>
+      <td><input type="text" list="dl-actors" value="${l.actor || ""}" data-l="${i}" data-k="actor" aria-label="Actor"></td>
+      <td><input type="text" list="dl-scenes" value="${l.scene || ""}" data-l="${i}" data-k="scene" placeholder="e.g. Act 1 Sc 3" aria-label="Scene or number"></td>
       <td><input type="text" value="${l.usage_notes || ""}" data-l="${i}" data-k="usage_notes" placeholder="e.g. Wedding dress, finale" aria-label="How it's used"></td>
       <td><button type="button" class="btn sm ghost" data-rml="${i}">Remove</button></td></tr>`)}</table></div>`;
 }
@@ -740,6 +855,7 @@ function bindLines(box, lines, kind, rerender) {
   box.innerHTML = linesTable(lines, kind).s;
   $$("[data-l]", box).forEach((el) => el.addEventListener("input", () => { const l = lines[+el.dataset.l]; l[el.dataset.k] = el.dataset.k === "qty" || el.dataset.k === "condition_out" ? Number(el.value) : el.value; }));
   $$("[data-rml]", box).forEach((b) => (b.onclick = () => { lines.splice(+b.dataset.rml, 1); rerender(); }));
+  if (kind === "show") $$("[data-k=character]", box).forEach((el) => { const i = +el.dataset.l; autoActor(el, $(`[data-l="${i}"][data-k=actor]`, box), (who) => (lines[i].actor = who)); });
 }
 
 async function viewNewRental() {
@@ -867,37 +983,178 @@ async function viewRental(id) {
 }
 
 // ---------- shows ----------
+const KIND = { team: "Production team", cast: "Cast", pit: "Pit orchestra / band", crew: "Crew" };
+const ROLE_LABEL = { team: "Position", cast: "Character", pit: "Instrument", crew: "Position" };
+const roleList = (kind) => ({ team: "team_position", crew: "crew_position", pit: "instrument" }[kind] || "characters");
+// Musicals (and revues, cabarets, operas) get musical numbers, a pit orchestra and voice parts.
+const isMusical = (type) => /musical|revue|cabaret|opera|operetta|concert|showcase/i.test(type || "");
+const lookupDLs = () => ""; // every dropdown list is already rendered by shell()
+// Show type as clear buttons. Types come from Settings → Dropdown lists → Show types.
+function typePicker(cur) {
+  const types = S.lists.show_type && S.lists.show_type.length ? [...S.lists.show_type] : ["Play", "Musical"];
+  if (cur && !types.includes(cur)) types.push(cur);
+  return h`<div class="typepick" role="radiogroup" aria-label="Type of show">${types.map((t, i) => h`<label class="${t === cur ? "on" : ""}"><input type="radio" name="type" id="ty-${i}" value="${t}" ${t === cur ? raw("checked") : ""}><span>${t}</span></label>`)}</div>`;
+}
+function bindTypePicker(root, onChange) {
+  $$(".typepick input", root).forEach((r) => r.addEventListener("change", () => { $$(".typepick label", root).forEach((l) => l.classList.toggle("on", $("input", l).checked)); onChange && onChange(r.value); }));
+}
+
+// ---- musical numbers ----
+function parseNumbers(text) {
+  let act = ""; const out = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let map = null;
+  if (lines.length && lines[0].includes("\t")) {
+    const head = lines[0].split("\t").map((c) => c.trim().toLowerCase());
+    if (head.some((c) => /(title|song|number)/.test(c))) {
+      const f = (re) => head.findIndex((c) => re.test(c));
+      map = { act: f(/^act/), number: f(/^(no|#|num)/), title: f(/(title|song)/), singers: f(/(sung|singer|perform|who|character)/), scene: f(/scene/), notes: f(/note/) };
+      lines.shift();
+    }
+  }
+  for (const l of lines) {
+    const am = l.match(/^(act|part)\s+([\w]+)\s*:?\s*$/i);
+    if (am) { act = am[2]; continue; }
+    if (map) { const c = l.split("\t").map((x) => x.trim()); const at = (i) => (i >= 0 && i < c.length ? c[i] : ""); out.push({ act: at(map.act) || act, number: at(map.number), title: at(map.title), singers: at(map.singers), scene: at(map.scene), notes: at(map.notes) }); continue; }
+    let cells = l.includes("\t") ? l.split("\t").map((x) => x.trim()) : null;
+    let number = "", rest = l;
+    if (cells) { if (/^\d+[a-z]?\.?$|^[ivx]+\.?$/i.test(cells[0])) number = cells.shift().replace(/\.$/, ""); out.push({ act, number, title: cells[0] || "", singers: cells[1] || "", scene: cells[2] || "" }); continue; }
+    const m = l.match(/^(\d+[a-z]?|[ivx]+)[.)]\s*(.+)$/i);
+    if (m) { number = m[1]; rest = m[2]; }
+    const parts = rest.split(/\s+[-–—]\s+|\s*\.{3,}\s*/);
+    out.push({ act, number, title: parts[0].replace(/^["“]|["”]$/g, "").trim(), singers: parts.slice(1).join(", ") });
+  }
+  return out.filter((n) => n.title);
+}
+function numbersImporter(box) {
+  box.innerHTML = h`<textarea rows="8" data-num placeholder="Act 1\n1. Prologue – Ensemble\n2. Skid Row (Downtown) – Seymour, Audrey, Mushnik, Ensemble\nAct 2\n10. Call Back in the Morning – Seymour, Audrey\n\nPaste the song list from the script or program. One song per line; “Act 1” lines start a new act."></textarea>
+    <div class="small muted" data-numprev style="margin-top:6px">Number and singers are optional. A spreadsheet works too: Act, No., Song, Sung by, Scene.</div>`.s;
+  const ta = $("[data-num]", box);
+  const get = () => parseNumbers(ta.value);
+  ta.addEventListener("input", () => { const n = get(); $("[data-numprev]", box).innerHTML = n.length ? h`<b>${n.length} number${n.length === 1 ? "" : "s"}</b>: ${n.slice(0, 5).map((x, i) => h`${i ? ", " : ""}${x.number ? x.number + ". " : ""}${x.title}`)}${n.length > 5 ? ` and ${n.length - 5} more` : ""}.`.s : "Number and singers are optional. A spreadsheet works too: Act, No., Song, Sung by, Scene."; });
+  return get;
+}
+const numberLabel = (n) => [n.act ? "Act " + n.act : "", (n.number ? n.number + ". " : "") + n.title].filter(Boolean).join(" · ");
+
 let SQ = { q: "", status: "" };
 async function viewShows() {
   shell("shows", h`
-    ${page("Productions", "Shows", h`<a class="btn" href="/api/export/shows.csv">Export spreadsheet</a><a class="btn primary" href="#/shows/new">${icon("plus")}New show</a>`)}
-    <p class="muted" style="max-width:68ch;margin-top:-8px">Each show keeps a permanent record of what was checked out, for which character and scene, any alterations made, and the condition it came back in.</p>
+    ${page("Productions", "Shows", h`<a class="btn" href="/api/export/shows.csv">Export pieces used</a><a class="btn" href="/api/export/people.csv">Export cast &amp; crew</a><a class="btn primary" href="#/shows/new">${icon("plus")}Create a show</a>`)}
+    <p class="muted" style="max-width:70ch;margin-top:-8px">Each show keeps its production team, cast and crew, scripts and other materials, photos, and a permanent record of every costume and prop checked out to it.</p>
     <div class="searchbar"><div class="q">${icon("search")}<input type="search" id="s-q" placeholder="Search by title, director, season or year" value="${SQ.q}"></div>
       <select id="s-st" style="width:auto">${[["", "All shows"], ["planning", "Planning"], ["in production", "In production"], ["closed", "Closed"]].map(([v, t]) => h`<option value="${v}" ${SQ.status === v ? raw("selected") : ""}>${t}</option>`)}</select></div>
     <div id="slist"></div>`);
   let t;
   const run = async () => {
     const rows = await GET("/api/shows" + qs(SQ));
-    $("#slist").innerHTML = rows.length ? h`<section class="panel tablewrap"><table><tr><th>Show</th><th>Season</th><th>Director</th><th>Run</th><th>Status</th><th class="r">Pieces used</th><th class="r">Still out</th></tr>
-      ${rows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td><b>${s.title}</b><div class="small muted">${s.type || ""}</div></td><td>${showLabel(s)}</td><td>${s.director || ""}</td>
-        <td class="num small">${s.open_date ? fmtDate(s.open_date) + (s.close_date ? " – " + fmtDate(s.close_date) : "") : "—"}</td><td>${showPill(s.status)}</td><td class="r num">${s.pieces || 0}</td><td class="r num">${s.out_pieces || ""}</td></tr>`)}</table></section>`.s
-      : h`<div class="panel"><div class="empty">${SQ.q || SQ.status ? "No shows match." : h`No shows yet. <a href="#/shows/new">Create the spring play</a> and check items out to it.`}</div></div>`.s;
+    $("#slist").innerHTML = rows.length ? h`<section class="panel tablewrap"><table><tr><th></th><th>Show</th><th>Season</th><th>Director</th><th>Run</th><th>Status</th><th class="r">Cast</th><th class="r">Pieces used</th><th class="r">Still out</th></tr>
+      ${rows.map((s) => h`<tr class="click" data-go="#/show/${s.id}"><td>${s.cover ? h`<img class="thumb" src="${showFileURL(s.cover)}" alt="" loading="lazy">` : h`<span class="thumb ph">${icon("mask")}</span>`}</td>
+        <td><b>${s.title}</b><div class="small muted">${[s.type, s.photo_count ? `${s.photo_count} photos` : "", s.material_count ? `${s.material_count} materials` : ""].filter(Boolean).join(" · ")}</div></td><td>${showLabel(s)}</td><td>${s.director || ""}</td>
+        <td class="num small">${s.open_date ? fmtDate(s.open_date) + (s.close_date ? " – " + fmtDate(s.close_date) : "") : "—"}</td><td>${showPill(s.status)}</td><td class="r num">${s.cast_count || ""}</td><td class="r num">${s.pieces || 0}</td><td class="r num">${s.out_pieces || ""}</td></tr>`)}</table></section>`.s
+      : h`<div class="panel"><div class="empty">${SQ.q || SQ.status ? "No shows match." : h`No shows yet. <a href="#/shows/new">Create the spring play</a> to add its cast, crew and materials and check out costumes for it.`}</div></div>`.s;
     bindRows($("#slist"));
   };
   $("#s-q").oninput = (e) => { SQ.q = e.target.value; clearTimeout(t); t = setTimeout(run, 200); };
   $("#s-st").onchange = (e) => { SQ.status = e.target.value; run(); };
   run();
 }
+const showFileURL = (f, dl) => "/files/show/" + encodeURIComponent(f) + (dl ? "?download=1" : "");
+
+// ---- reading pasted or uploaded cast & crew lists ----
+function csvCells(line) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === ",") { out.push(cur); cur = ""; } else cur += c;
+  }
+  out.push(cur); return out.map((s) => s.trim());
+}
+const csvToTabs = (text) => text.split(/\r?\n/).map((l) => (l.trim() ? csvCells(l).join("\t") : "")).join("\n");
+function splitPerson(line) {
+  if (line.includes("\t")) return line.split("\t").map((s) => s.trim());
+  return line.split(/\s*\.{3,}\s*|\s+[-–—]\s+|\s*:\s+|\s*,\s*|\s{3,}/).map((s) => s.trim()).filter(Boolean);
+}
+// order: "name" = name first, then role; "role" = role first, then name
+function parsePeople(text, kind, order) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  let map = null;
+  const head = splitPerson(lines[0]).map((c) => c.toLowerCase());
+  if (head.some((c) => /^(name|student|actor|person)/.test(c)) && head.length > 1) {
+    const find = (re) => head.findIndex((c) => re.test(c));
+    map = { name: find(/^(name|student|actor|person|first)/), role: find(/(role|character|part|position|job|instrument)/), voice_part: find(/(voice|vocal|range)/), grade: find(/(grade|year|class)/), email: find(/mail/), phone: find(/(phone|cell|mobile)/) };
+    lines.shift();
+  }
+  return lines.map((l) => {
+    const c = splitPerson(l);
+    const at = (i) => (i >= 0 && i < c.length ? c[i] : "");
+    if (map) return { kind, name: at(map.name), role: at(map.role), voice_part: at(map.voice_part), grade: at(map.grade), email: at(map.email), phone: at(map.phone) };
+    const [a = "", b = "", grade = "", email = "", phone = ""] = c;
+    const p = order === "role" ? { kind, role: a, name: b || a, grade, email, phone } : { kind, name: a, role: b, grade, email, phone };
+    // cast lists for musicals often carry a voice part in the third column
+    if (kind === "cast" && grade && (S.lists.voice_part || []).some((v) => v.toLowerCase() === grade.toLowerCase())) { p.voice_part = grade; p.grade = email; p.email = phone; p.phone = c[5] || ""; }
+    return p;
+  }).filter((p) => p.name);
+}
+
+// A paste box with "upload a CSV" and a live preview. Returns a function that gives the parsed people.
+function peopleImporter(box, kind) {
+  const rl = ROLE_LABEL[kind].toLowerCase();
+  box.innerHTML = h`<div class="importer">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+      <label class="small" style="margin:0">Each line is</label>
+      <select data-order style="width:auto;min-height:30px;padding:2px 6px"><option value="name">Name, then ${rl}</option><option value="role">${ROLE_LABEL[kind]}, then name</option></select>
+      <label class="btn sm" style="margin:0;font-weight:500">Upload a spreadsheet (.csv)<input type="file" accept=".csv,.txt,text/csv,text/plain" hidden data-csv></label>
+    </div>
+    <textarea rows="6" data-paste placeholder="${{ cast: "Jane Doe – Meg March\nSam Lee – Laurie", pit: "Maria Chen – Keyboard 1\nDevon Price – Drums", crew: "Alex Kim – Light Board Operator\nJordan Ruiz – Running Crew" }[kind] || ""}\n\nPaste from Excel, Google Sheets or Word. One person per line."></textarea>
+    <div class="small muted" data-preview style="margin-top:6px">Tip: columns after the ${rl} can hold grade, email and phone.</div></div>`.s;
+  const ta = $("[data-paste]", box), ord = $("[data-order]", box);
+  if (kind === "cast") ord.value = "name";
+  const get = () => parsePeople(ta.value, kind, ord.value);
+  const preview = () => {
+    const ps = get();
+    $("[data-preview]", box).innerHTML = ps.length ? h`<b>${ps.length} ${ps.length === 1 ? "person" : "people"}</b> will be added: ${ps.slice(0, 6).map((p, i) => h`${i ? ", " : ""}${p.name}${p.role ? h` <span class="muted">(${p.role})</span>` : ""}`)}${ps.length > 6 ? ` and ${ps.length - 6} more` : ""}. Wrong way round? Change “Each line is”.`.s
+      : `Tip: columns after the ${rl} can hold grade, email and phone.`;
+  };
+  ta.addEventListener("input", preview); ord.onchange = preview;
+  $("[data-csv]", box).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    if (/\.xlsx?$/i.test(f.name)) { toast("Save the spreadsheet as CSV first (File → Save As → CSV), or copy the cells and paste them here.", true); return; }
+    const text = await f.text(); ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + csvToTabs(text); preview(); e.target.value = "";
+  };
+  return get;
+}
+
+// Position + name rows for the production team. Prefilled with the first positions in Settings.
+function teamForm(box, rows) {
+  const draw = () => {
+    box.innerHTML = h`<div class="tablewrap"><table class="lines"><tr><th style="width:34%">Position</th><th>Name</th><th>Email</th><th>Phone</th><th></th></tr>
+      ${rows.map((r, i) => h`<tr><td><input type="text" list="dl-team_position" value="${r.role || ""}" data-i="${i}" data-k="role" aria-label="Position"></td>
+        <td><input type="text" value="${r.name || ""}" data-i="${i}" data-k="name" aria-label="Name" placeholder="Leave blank if not filled yet"></td>
+        <td><input type="email" value="${r.email || ""}" data-i="${i}" data-k="email" aria-label="Email"></td><td><input type="tel" value="${r.phone || ""}" data-i="${i}" data-k="phone" aria-label="Phone"></td>
+        <td><button type="button" class="btn sm ghost" data-rm="${i}" aria-label="Remove row">✕</button></td></tr>`)}</table></div>
+      <button type="button" class="btn sm" data-addrow style="margin-top:8px">${icon("plus")}Add a position</button>
+      <span class="small muted" style="margin-left:8px">Pick from the list or type any position. Directors can change the list in Settings.</span>`.s;
+    $$("[data-k]", box).forEach((el) => el.addEventListener("input", () => (rows[+el.dataset.i][el.dataset.k] = el.value)));
+    $$("[data-rm]", box).forEach((b) => (b.onclick = () => { rows.splice(+b.dataset.rm, 1); draw(); }));
+    $("[data-addrow]", box).onclick = () => { rows.push({ role: "", name: "" }); draw(); $$("[data-k=role]", box).pop().focus(); };
+  };
+  draw();
+  return () => rows.filter((r) => (r.name || "").trim()).map((r) => ({ kind: "team", role: r.role, name: r.name, email: r.email, phone: r.phone }));
+}
+
 async function viewShowForm(id) {
   const y = new Date().getFullYear();
   let s = { status: "planning", year: y, type: "Play", director: S.me.display_name || "" };
   if (id) s = (await GET("/api/shows/" + id)).show;
+  const posDL = lookupDLs();
   shell("shows", h`
-    ${page("Shows", id ? "Edit " + s.title : "New show", "", h`<a href="#/shows">Shows</a>`)}
+    ${page("Shows", id ? "Edit " + s.title : "Create a show", "", id ? h`<a href="#/shows">Shows</a> / <a href="#/show/${id}">${s.title}</a>` : h`<a href="#/shows">Shows</a>`)}
     <form id="showf" novalidate><div class="errbox" hidden></div>
       <fieldset><legend>Production</legend><div class="grid">
         ${fld("Title *", inp("title", s, 'placeholder="e.g. Little Shop of Horrors"'), "wide")}
-        ${fld("Type", listInp("type", s, "show_type"))}
+        <div class="full"><label>Type of show</label>${typePicker(s.type || "Play")}</div>
         ${fld("Season", listInp("season", s))}
         ${fld("School year / year", numInp("year", s, "1", 'min="1990" max="2100"'))}
         ${fld("Director", inp("director", s))}
@@ -906,98 +1163,324 @@ async function viewShowForm(id) {
         ${fld("Status", sel("status", [["planning", "Planning"], ["in production", "In production"], ["closed", "Closed"]], s.status))}
         ${fld("Notes", area("notes", s, 3), "full")}
       </div></fieldset>
-      <datalist id="dl-show_type">${(S.lists.show_type || []).map((v) => h`<option value="${v}">`)}</datalist><datalist id="dl-season">${(S.lists.season || []).map((v) => h`<option value="${v}">`)}</datalist>
-      <div class="formbar"><a class="btn ghost" href="${id ? "#/show/" + id : "#/shows"}">Cancel</a>${id && isDirector() ? h`<button type="button" class="btn danger" id="delshow">Delete show</button>` : ""}<button class="btn primary">${id ? "Save changes" : "Create show"}</button></div>
+      ${id ? h`<p class="note">Production team, cast, crew, materials and photos are managed on the <a href="#/show/${id}">show's page</a>.</p>` : h`
+      <fieldset><legend>Production team</legend><p class="hint" style="margin:-6px 0 10px">Fill in whoever is set. You can add or change people later.</p><div id="teambox"></div></fieldset>
+      <fieldset><legend>Cast</legend><div id="castbox"></div><p class="hint musonly" style="margin:8px 0 0">For a musical, add a voice part as a third column (e.g. “Jane Doe – Audrey – Soprano”), or set it later on the show's page.</p></fieldset>
+      <fieldset class="musonly"><legend>Musical numbers</legend><div id="numbox"></div></fieldset>
+      <fieldset class="musonly"><legend>Pit orchestra / band</legend><div id="pitbox"></div></fieldset>
+      <fieldset><legend>Crew</legend><div id="crewbox"></div></fieldset>
+      <fieldset><legend>Show materials</legend><p class="hint" style="margin:-6px 0 10px">Scripts, scores, rehearsal tracks, programs, schedules, design drawings, anything the show needs. Up to 200 MB per file.</p>
+        <div class="grid" style="margin-bottom:10px">${fld("Type of material", h`<input type="text" id="mat-cat" list="dl-material_type" placeholder="e.g. Script">`, "", "Applied to the files you add next.")}</div>
+        <div id="matdrop"></div><div id="matlist" class="filelist"></div></fieldset>
+      <fieldset><legend>Show photos</legend><div id="photodrop"></div><div id="photolist" class="pgrid" style="margin-top:10px"></div></fieldset>`}
+      ${posDL}
+      <div class="formbar"><span class="small muted" id="savestatus" aria-live="polite"></span><a class="btn ghost" href="${id ? "#/show/" + id : "#/shows"}">Cancel</a>${id && isDirector() ? h`<button type="button" class="btn danger" id="delshow">Delete show</button>` : ""}<button class="btn primary" id="savebtn">${id ? "Save changes" : "Create show"}</button></div>
     </form>`);
   const f = $("#showf");
+  let getTeam, getCast, getCrew, getPit, getNums; const mats = [], pics = [];
+  const musical = (t) => $$(".musonly", f).forEach((el) => (el.hidden = !isMusical(t)));
+  bindTypePicker(f, musical); musical(s.type || "Play");
+  if (!id) {
+    getTeam = teamForm($("#teambox"), (S.lists.team_position || []).slice(0, 8).map((role) => ({ role, name: "" })));
+    getCast = peopleImporter($("#castbox"), "cast");
+    getCrew = peopleImporter($("#crewbox"), "crew");
+    getPit = peopleImporter($("#pitbox"), "pit");
+    getNums = numbersImporter($("#numbox"));
+    const drawMats = () => { $("#matlist").innerHTML = mats.map((m, i) => h`<div>${fileBadge(m.file.name)}<span class="grow">${m.file.name} <span class="muted small">${fmtSize(m.file.size)}${m.category ? " · " + m.category : ""}</span></span><button type="button" class="btn sm ghost" data-rmm="${i}">Remove</button></div>`.s).join("");
+      $$("[data-rmm]").forEach((b) => (b.onclick = () => { mats.splice(+b.dataset.rmm, 1); drawMats(); })); };
+    const drawPics = () => { $("#photolist").innerHTML = pics.map((p, i) => h`<figure><img src="${p.url}" alt=""><button type="button" class="btn sm" data-rmp="${i}">Remove</button></figure>`.s).join("");
+      $$("[data-rmp]").forEach((b) => (b.onclick = () => { URL.revokeObjectURL(pics[+b.dataset.rmp].url); pics.splice(+b.dataset.rmp, 1); drawPics(); })); };
+    dropzone($("#matdrop"), { label: "Add materials", sub: "Click to choose files, or drag them here.", onFiles: (files) => { files.forEach((file) => mats.push({ file, category: $("#mat-cat").value.trim() })); drawMats(); } });
+    dropzone($("#photodrop"), { accept: "image/jpeg,image/png,image/webp,image/gif", label: "Add photos", sub: "Rehearsals, the set, the cast, opening night. Click or drag pictures here.",
+      onFiles: (files) => { files.filter(isImage).forEach((file) => pics.push({ file, url: URL.createObjectURL(file) })); drawPics(); } });
+  }
   f.onsubmit = async (e) => {
     e.preventDefault();
-    const d = formData(f), eb = $(".errbox", f);
-    try { if (id) { await api("PUT", "/api/shows/" + id, d); location.hash = "#/show/" + id; } else { const x = await api("POST", "/api/shows", d); location.hash = "#/show/" + x.id; } toast("Saved"); }
-    catch (err) { eb.textContent = err.message; eb.hidden = false; }
+    const d = formData(f), eb = $(".errbox", f), st = $("#savestatus"), btn = $("#savebtn");
+    if (!(d.title || "").trim()) { eb.textContent = "Enter the show's title."; eb.hidden = false; window.scrollTo(0, 0); return; }
+    if (id) {
+      try { await api("PUT", "/api/shows/" + id, d); toast("Saved"); location.hash = "#/show/" + id; } catch (err) { eb.textContent = err.message; eb.hidden = false; }
+      return;
+    }
+    btn.disabled = true;
+    let showId;
+    try {
+      st.textContent = "Creating the show…";
+      showId = (await api("POST", "/api/shows", d)).id;
+      const mus = isMusical(d.type);
+      const people = [...getTeam(), ...getCast(), ...(mus ? getPit() : []), ...getCrew()];
+      if (people.length) { st.textContent = `Adding ${people.length} people…`; await api("POST", `/api/shows/${showId}/people`, { people }); }
+      const nums = mus ? getNums() : [];
+      if (nums.length) { st.textContent = `Adding ${nums.length} musical numbers…`; await api("POST", `/api/shows/${showId}/numbers`, { numbers: nums }); }
+      const byCat = {}; mats.forEach((m) => (byCat[m.category] ||= []).push(m.file));
+      for (const [category, files] of Object.entries(byCat)) await uploadAll(`/api/shows/${showId}/files?kind=material`, "file", files, { extra: { category }, status: st });
+      if (pics.length) await uploadAll(`/api/shows/${showId}/files?kind=photo`, "file", pics.map((p) => p.file), { photos: true, status: st });
+      toast(`Created ${d.title}`); location.hash = "#/show/" + showId;
+    } catch (err) {
+      btn.disabled = false; st.textContent = "";
+      if (showId) { toast("The show was created, but something didn't save: " + err.message, true); location.hash = "#/show/" + showId; }
+      else { eb.textContent = err.message; eb.hidden = false; window.scrollTo(0, 0); }
+    }
   };
-  if ($("#delshow")) $("#delshow").onclick = () => confirmBox("Delete this show?", "Only shows with no items on record can be deleted. Mark a finished show Closed to keep its history.", "Delete show", async () => { await api("DELETE", "/api/shows/" + id); location.hash = "#/shows"; });
+  if ($("#delshow")) $("#delshow").onclick = () => confirmBox("Delete this show?", "Only shows with no costumes or props on record can be deleted. Its cast, crew, materials and photos are deleted too. To keep a finished show's history, mark it Closed instead.", "Delete show", async () => { await api("DELETE", "/api/shows/" + id); location.hash = "#/shows"; });
 }
 
-async function viewShow(id) {
+const FILEKIND = [[/\.pdf$/i, "PDF"], [/\.(docx?|odt|rtf|pages)$/i, "DOC"], [/\.(xlsx?|ods|csv|numbers)$/i, "XLS"], [/\.(pptx?|odp|key)$/i, "PPT"], [/\.(mp3|wav|m4a|aac|ogg|flac|aiff?)$/i, "AUDIO"],
+  [/\.(mp4|mov|m4v|avi|wmv|mkv|webm)$/i, "VIDEO"], [/\.(jpe?g|png|gif|webp|heic|tiff?|bmp)$/i, "IMG"], [/\.(zip|7z|rar)$/i, "ZIP"], [/\.(mus|musx|sib|mscz|xml|mxl)$/i, "SCORE"], [/\.txt$/i, "TXT"]];
+const fileBadge = (name) => { const k = (FILEKIND.find(([re]) => re.test(name)) || [0, "FILE"])[1]; return h`<span class="fbadge" data-k="${k}">${k}</span>`; };
+
+let SHOW_TAB = "pieces";
+async function viewShow(id, tab) {
+  if (tab) SHOW_TAB = tab;
+  if (viewShow.last !== id) { SHOW_TAB = tab || "pieces"; viewShow.last = id; }
   const d = await GET("/api/shows/" + id);
-  const s = d.show, items = d.items;
+  const s = d.show, items = d.items, people = d.people;
   const outLines = items.filter((l) => !l.date_returned);
-  const staged = (S.staged || []).map((l) => ({ ...l })); S.staged = null;
+  const staged = (S.staged || []).map((l) => ({ ...l }));
+  if (S.staged) { S.staged = null; SHOW_TAB = "pieces"; }
   const pieces = items.reduce((a, l) => a + l.qty, 0);
   const cats = {}; items.forEach((l) => (cats[l.category || "Other"] = (cats[l.category || "Other"] || 0) + l.qty));
-  const chars = [...new Set(items.map((l) => l.character).filter(Boolean))];
-  const groups = {}; items.forEach((l) => (groups[l.character || "No character assigned"] ||= []).push(l));
+  const cast = people.filter((p) => p.kind === "cast");
+  const castByRole = {}; cast.forEach((p) => p.role && (castByRole[p.role.toLowerCase()] = p.name));
+  S.castByRole = castByRole;
+  const chars = [...new Set([...cast.map((p) => p.role).filter(Boolean), ...items.map((l) => l.character).filter(Boolean)])];
+  const mus = isMusical(s.type) || d.numbers.length > 0;
+  S.showMusical = mus;
+  const tabs = [["pieces", `Costumes & props (${items.length})`], ["people", `Cast & crew (${people.length})`], ...(mus ? [["numbers", `Musical numbers (${d.numbers.length})`]] : []), ["materials", `Materials (${d.materials.length})`], ["photos", `Photos (${d.photos.length})`]];
+  if (SHOW_TAB === "numbers" && !mus) SHOW_TAB = "pieces";
   shell("shows", h`
     ${page([s.type, showLabel(s)].filter(Boolean).join(" · ") || "Show", s.title, h`
-      <button class="btn" id="printpull">${icon("print")}Print pull sheet</button>
-      <a class="btn" href="#/items" id="browse">${icon("search")}Browse inventory</a>
+      <button class="btn" id="printpull">${icon("print")}Print</button>
       ${outLines.length ? h`<button class="btn dark" id="returnbtn">Return items (${outLines.length})</button>` : ""}
       <a class="btn" href="#/show/${id}/edit">Edit show</a>`, h`<a href="#/shows">Shows</a>`)}
-    <div class="avail" style="margin-top:0">${showPill(s.status)}
-      <span class="small">${s.director ? "Directed by " + s.director : ""}${s.open_date ? ` · ${fmtDate(s.open_date)}${s.close_date ? " – " + fmtDate(s.close_date) : ""}` : ""}${s.venue ? " · " + s.venue : ""}</span>
-      <span class="small muted" style="margin-left:auto">${pieces} piece${pieces === 1 ? "" : "s"} used${Object.keys(cats).length ? ": " + Object.entries(cats).map(([c, n]) => `${n} ${c.toLowerCase()}`).join(", ") : ""}${outLines.length ? ` · ${outLines.reduce((a, l) => a + l.qty, 0)} still out` : ""}</span></div>
+    <div class="showhead">${s.cover ? h`<img class="cover" src="${showFileURL(s.cover)}" alt="" id="coverimg">` : ""}
+      <div class="avail" style="margin:0;flex:1">${showPill(s.status)}
+        <span class="small">${s.director ? "Directed by " + s.director : ""}${s.open_date ? ` · ${fmtDate(s.open_date)}${s.close_date ? " – " + fmtDate(s.close_date) : ""}` : ""}${s.venue ? " · " + s.venue : ""}</span>
+        <span class="small muted" style="margin-left:auto">${mus && d.numbers.length ? `${d.numbers.length} musical numbers · ` : ""}${cast.length} in the cast · ${people.length - cast.length} on the team${mus ? ", pit" : ""} &amp; crew · ${pieces} piece${pieces === 1 ? "" : "s"} used${outLines.length ? ` · ${outLines.reduce((a, l) => a + l.qty, 0)} still out` : ""}</span></div></div>
     ${s.notes ? h`<p class="small" style="max-width:70ch">${s.notes}</p>` : ""}
     <datalist id="dl-characters">${chars.map((c) => h`<option value="${c}">`)}</datalist>
+    <datalist id="dl-actors">${cast.map((p) => h`<option value="${p.name}">`)}</datalist>
+    <datalist id="dl-scenes">${d.numbers.map((n) => h`<option value="${numberLabel(n)}">`)}</datalist>
+    ${lookupDLs()}
+    <div class="tabs bigtabs no-print" role="tablist">${tabs.map(([k, t]) => h`<button type="button" data-stab="${k}" class="${SHOW_TAB === k ? "on" : ""}" role="tab" aria-selected="${SHOW_TAB === k}">${t}</button>`)}</div>
+    <div id="stab"></div>`);
+  $$("[data-stab]").forEach((b) => (b.onclick = () => { SHOW_TAB = b.dataset.stab; $$("[data-stab]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); }); drawTab(); }));
+  $("#printpull").onclick = () => window.print();
+  if ($("#coverimg")) $("#coverimg").onclick = () => lightbox(d.photos.map((p) => ({ src: showFileURL(p.file), caption: p.caption })), Math.max(0, d.photos.findIndex((p) => p.file === s.cover)));
+  if ($("#returnbtn")) $("#returnbtn").onclick = () => returnModal(id, s, outLines);
+  const reload = () => viewShow(id);
+  const drawTab = () => {
+    const box = $("#stab");
+    if (SHOW_TAB === "people") return showPeopleTab(box, id, people, items, reload);
+    if (SHOW_TAB === "numbers") return showNumbersTab(box, id, d.numbers, items, reload);
+    if (SHOW_TAB === "materials") return showMaterialsTab(box, id, d.materials, reload);
+    if (SHOW_TAB === "photos") return showPhotosTab(box, id, s, d.photos, reload);
+    showPiecesTab(box, id, s, items, staged, chars, reload);
+  };
+  drawTab();
+}
+
+function showPiecesTab(box, id, s, items, staged, chars, reload) {
+  const groups = {}; items.forEach((l) => (groups[l.character || "No character assigned"] ||= []).push(l));
+  box.innerHTML = h`
+    <div class="print-only"><h2>${s.title} — costumes &amp; props</h2></div>
     ${s.status !== "closed" ? h`<fieldset class="no-print"><legend>Check items out to this show</legend><div class="errbox" id="coerr" hidden></div>
       <div id="stlines"></div>
-      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 14px">${fld("Date checked out", dateInp("co_date", todayISO()))}<button type="button" class="btn primary" id="cobtn">Check out to ${s.title}</button></div>
+      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 14px">${fld("Date checked out", dateInp("co_date", todayISO()))}<button type="button" class="btn primary" id="cobtn">Check out to ${s.title}</button>
+        <a class="btn ghost" href="#/items" id="browse">${icon("search")}Search the full inventory</a></div>
       <div id="pick"></div></fieldset>` : h`<div class="note no-print">This show is closed. Its record below is kept as history. Reopen it with <b>Edit show</b> to check out more items.</div>`}
     <section class="panel"><header><h2>Costumes, props &amp; pieces used</h2><span class="more small muted">Grouped by character</span></header>
       ${items.length ? h`<div class="tablewrap"><table><tr><th>Item</th><th>Scene / act</th><th>Actor</th><th>How it's used</th><th>Alterations</th><th>Out</th><th>Back</th><th class="no-print"></th></tr>
-        ${Object.entries(groups).map(([g, ls]) => h`<tr class="group-h"><td colspan="8">${g}</td></tr>${ls.map((l) => h`<tr>
+        ${Object.entries(groups).map(([g, ls]) => h`<tr class="group-h"><td colspan="8">${g}${S.castByRole[g.toLowerCase()] ? h` <span class="muted" style="font-weight:400">· ${S.castByRole[g.toLowerCase()]}</span>` : ""}</td></tr>${ls.map((l) => h`<tr>
           <td><a href="#/item/${l.item_id}">${tag(l.tag)}</a> <b>${l.name}</b>${l.qty > 1 ? ` × ${l.qty}` : ""}<div class="small muted">${[l.category, l.size && "Size " + l.size, l.location].filter(Boolean).join(" · ")}</div></td>
           <td>${l.scene || ""}</td><td>${l.actor || ""}</td><td class="small">${l.usage_notes || ""}</td><td class="small">${l.alterations || ""}</td>
           <td class="num small">${fmtDate(l.date_out)}<div>${condBadge(l.condition_out)}</div></td>
           <td class="num small">${l.date_returned ? h`${fmtDate(l.date_returned)}<div>${condBadge(l.condition_in)}</div>${l.notes_in ? h`<div class="muted">${l.notes_in}</div>` : ""}` : h`<span class="pill warn">Out</span>`}</td>
           <td class="no-print" style="white-space:nowrap"><button class="btn sm" data-edit="${l.id}">Edit</button>${!l.date_returned || isDirector() ? h` <button class="btn sm ghost" data-del="${l.id}" title="Remove from this show">✕</button>` : ""}</td></tr>`)}`)}</table></div>`
         : h`<div class="empty">Nothing has been checked out to this show yet.</div>`}
-    </section>`);
-  $("#printpull").onclick = () => window.print();
-  $("#browse").onclick = () => { INV = { ...INV_DEFAULT }; };
-  // staging area
-  if ($("#stlines")) {
-    const box = $("#stlines");
-    const rerender = () => bindLines(box, staged, "show", rerender);
+    </section>`.s;
+  if ($("#browse", box)) $("#browse", box).onclick = () => { INV = { ...INV_DEFAULT }; };
+  if ($("#stlines", box)) {
+    const lb = $("#stlines", box);
+    const rerender = () => bindLines(lb, staged, "show", rerender);
     rerender();
-    picker($("#pick"), (it) => { if (staged.some((l) => l.id === it.id)) return; staged.push(it); rerender(); });
-    $("#cobtn").onclick = async () => {
-      const eb = $("#coerr");
+    picker($("#pick", box), (it) => { if (staged.some((l) => l.id === it.id)) return; staged.push(it); rerender(); });
+    $("#cobtn", box).onclick = async () => {
+      const eb = $("#coerr", box);
       if (!staged.length) { eb.textContent = "Add items first: search below or use your pull list."; eb.hidden = false; return; }
       try {
-        await api("POST", `/api/shows/${id}/items`, { date_out: $("#f-co_date").value, items: staged.map((l) => ({ item_id: l.id, qty: l.qty || 1, character: l.character, actor: l.actor, scene: l.scene, usage_notes: l.usage_notes })) });
+        await api("POST", `/api/shows/${id}/items`, { date_out: $("#f-co_date", box).value, items: staged.map((l) => ({ item_id: l.id, qty: l.qty || 1, character: l.character, actor: l.actor, scene: l.scene, usage_notes: l.usage_notes })) });
         const ids = new Set(staged.map((l) => l.id)); const before = S.pull.length; S.pull = S.pull.filter((p) => !ids.has(p.id)); if (S.pull.length !== before) savePull();
-        toast(`Checked out ${staged.length} item${staged.length === 1 ? "" : "s"}`); viewShow(id);
+        toast(`Checked out ${staged.length} item${staged.length === 1 ? "" : "s"}`); reload();
       } catch (err) { eb.textContent = err.message; eb.hidden = false; }
     };
   }
-  $$("[data-edit]").forEach((b) => (b.onclick = () => {
+  $$("[data-edit]", box).forEach((b) => (b.onclick = () => {
     const l = items.find((x) => x.id === +b.dataset.edit);
-    modal({ title: "Edit how " + l.name + " was used",
-      body: h`<datalist id="dl-characters">${chars.map((c) => h`<option value="${c}">`)}</datalist><div class="grid">
-        ${fld("Character / use", h`<input type="text" name="character" id="e-char" list="dl-characters" value="${l.character || ""}">`)}${fld("Actor", h`<input type="text" name="actor" id="e-actor" value="${l.actor || ""}">`)}
-        ${fld("Scene / act", h`<input type="text" name="scene" id="e-scene" value="${l.scene || ""}">`)}${fld("How it's used", h`<input type="text" name="usage_notes" id="e-use" value="${l.usage_notes || ""}">`, "full")}
+    const f = modal({ title: "Edit how " + l.name + " was used",
+      body: h`<div class="grid">
+        ${fld("Character / use", h`<input type="text" name="character" id="e-char" list="dl-characters" value="${l.character || ""}">`)}${fld("Actor", h`<input type="text" name="actor" id="e-actor" list="dl-actors" value="${l.actor || ""}">`)}
+        ${fld("Scene / number", h`<input type="text" name="scene" id="e-scene" list="dl-scenes" value="${l.scene || ""}">`)}${fld("How it's used", h`<input type="text" name="usage_notes" id="e-use" value="${l.usage_notes || ""}">`, "full")}
         ${fld("Alterations made", h`<textarea name="alterations" id="e-alt" rows="2" placeholder="e.g. Hem taken up 2 inches; darts added at waist">${l.alterations || ""}</textarea>`, "full")}</div>`,
-      onOk: async (f) => { await api("PUT", "/api/show-items/" + l.id, formData(f)); toast("Saved"); viewShow(id); } });
+      onOk: async (f) => { await api("PUT", "/api/show-items/" + l.id, formData(f)); toast("Saved"); reload(); } });
+    autoActor($("#e-char", f), $("#e-actor", f));
   }));
-  $$("[data-del]").forEach((b) => (b.onclick = () => { const l = items.find((x) => x.id === +b.dataset.del);
-    confirmBox("Remove from this show?", `${l.name} will be taken off ${s.title}'s record${l.date_returned ? "" : " and become available again"}.`, "Remove", async () => { await api("DELETE", "/api/show-items/" + l.id); viewShow(id); }); }));
-  if ($("#returnbtn")) $("#returnbtn").onclick = () => {
-    const form = modal({ title: "Return items from " + s.title, ok: "Return checked items", wide: true,
-      body: h`<p class="small muted" style="margin-top:0">Inspect each piece. Untick anything not back yet.</p><div class="tablewrap"><table class="lines"><tr><th></th><th>Item</th><th style="width:170px">Condition now</th><th>Notes</th><th>Alterations</th><th>Repair</th></tr>
-        ${outLines.map((l) => h`<tr data-rl="${l.id}"><td><input type="checkbox" name="back" checked aria-label="Returned"></td><td>${tag(l.tag)} <b>${l.name}</b><div class="small muted">${l.character || ""}</div></td>
-          <td><select name="ci" aria-label="Condition">${condOptions(l.condition_out || l.current_condition)}</select></td><td><input type="text" name="ni" placeholder="e.g. Needs cleaning" aria-label="Notes"></td>
-          <td><input type="text" name="alt" value="${l.alterations || ""}" aria-label="Alterations"></td><td><label class="check small"><input type="checkbox" name="rp"> Send</label></td></tr>`)}</table></div>
-        <div class="grid" style="margin-top:12px">${fld("Returned on", dateInp("ret_date", todayISO()))}<div style="align-self:end"><label class="check"><input type="checkbox" id="closeshow" ${s.close_date && s.close_date <= todayISO() ? raw("checked") : ""}> Mark the show closed</label></div></div>`,
-      onOk: async (f) => {
-        const rows = $$("tr[data-rl]", f).filter((tr) => $("[name=back]", tr).checked);
-        if (!rows.length) throw new Error("Tick at least one item that came back.");
-        await api("POST", `/api/shows/${id}/return`, { date_returned: $("#f-ret_date", f).value, close_show: $("#closeshow", f).checked && rows.length === outLines.length,
-          items: rows.map((tr) => ({ id: +tr.dataset.rl, condition_in: +$("[name=ci]", tr).value, notes_in: $("[name=ni]", tr).value, alterations: $("[name=alt]", tr).value, send_to_repair: $("[name=rp]", tr).checked })) });
-        toast(`Returned ${rows.length} item${rows.length === 1 ? "" : "s"}`); viewShow(id);
-      } });
-    return form;
+  $$("[data-del]", box).forEach((b) => (b.onclick = () => { const l = items.find((x) => x.id === +b.dataset.del);
+    confirmBox("Remove from this show?", `${l.name} will be taken off ${s.title}'s record${l.date_returned ? "" : " and become available again"}.`, "Remove", async () => { await api("DELETE", "/api/show-items/" + l.id); reload(); }); }));
+}
+// When a character from the cast list is chosen, fill in who plays them.
+function autoActor(charEl, actorEl, onSet) {
+  charEl.addEventListener("change", () => { const who = (S.castByRole || {})[charEl.value.trim().toLowerCase()]; if (who && !actorEl.value) { actorEl.value = who; if (onSet) onSet(who); } });
+}
+
+function returnModal(id, s, outLines) {
+  modal({ title: "Return items from " + s.title, ok: "Return checked items", wide: true,
+    body: h`<p class="small muted" style="margin-top:0">Inspect each piece. Untick anything not back yet.</p><div class="tablewrap"><table class="lines"><tr><th></th><th>Item</th><th style="width:170px">Condition now</th><th>Notes</th><th>Alterations</th><th>Repair</th></tr>
+      ${outLines.map((l) => h`<tr data-rl="${l.id}"><td><input type="checkbox" name="back" checked aria-label="Returned"></td><td>${tag(l.tag)} <b>${l.name}</b><div class="small muted">${l.character || ""}</div></td>
+        <td><select name="ci" aria-label="Condition">${condOptions(l.condition_out || l.current_condition)}</select></td><td><input type="text" name="ni" placeholder="e.g. Needs cleaning" aria-label="Notes"></td>
+        <td><input type="text" name="alt" value="${l.alterations || ""}" aria-label="Alterations"></td><td><label class="check small"><input type="checkbox" name="rp"> Send</label></td></tr>`)}</table></div>
+      <div class="grid" style="margin-top:12px">${fld("Returned on", dateInp("ret_date", todayISO()))}<div style="align-self:end"><label class="check"><input type="checkbox" id="closeshow" ${s.close_date && s.close_date <= todayISO() ? raw("checked") : ""}> Mark the show closed</label></div></div>`,
+    onOk: async (f) => {
+      const rows = $$("tr[data-rl]", f).filter((tr) => $("[name=back]", tr).checked);
+      if (!rows.length) throw new Error("Tick at least one item that came back.");
+      await api("POST", `/api/shows/${id}/return`, { date_returned: $("#f-ret_date", f).value, close_show: $("#closeshow", f).checked && rows.length === outLines.length,
+        items: rows.map((tr) => ({ id: +tr.dataset.rl, condition_in: +$("[name=ci]", tr).value, notes_in: $("[name=ni]", tr).value, alterations: $("[name=alt]", tr).value, send_to_repair: $("[name=rp]", tr).checked })) });
+      toast(`Returned ${rows.length} item${rows.length === 1 ? "" : "s"}`); viewShow(id);
+    } });
+}
+
+function showPeopleTab(box, id, people, items, reload) {
+  const pieceCount = {}; items.forEach((l) => l.character && (pieceCount[l.character.toLowerCase()] = (pieceCount[l.character.toLowerCase()] || 0) + l.qty));
+  const contact = (p) => [p.email, p.phone].filter(Boolean).join(" · ");
+  const mus = S.showMusical;
+  const vp = (kind) => mus && kind === "cast";
+  const section = (kind) => {
+    const list = people.filter((p) => p.kind === kind);
+    return h`<section class="panel" style="margin-bottom:18px"><header><h2>${KIND[kind]}</h2><span class="muted small">${list.length}</span>
+      <span class="more no-print" style="display:flex;gap:6px">${kind === "team" ? h`<button class="btn sm" data-fillteam>Fill in positions</button>` : h`<button class="btn sm" data-import="${kind}">Paste or upload a list</button>`}</span></header>
+      ${list.length ? h`<div class="tablewrap"><table><tr><th>${ROLE_LABEL[kind]}</th><th>Name</th>${vp(kind) ? h`<th>Voice part</th>` : ""}${kind !== "team" ? h`<th>Grade</th>` : ""}<th>Contact</th>${kind === "cast" ? h`<th class="r">Costumes &amp; props</th>` : ""}<th class="no-print"></th></tr>
+        ${list.map((p, i) => h`<tr><td><b>${p.role || "—"}</b></td><td>${p.name}${p.notes ? h`<div class="small muted">${p.notes}</div>` : ""}</td>${vp(kind) ? h`<td>${p.voice_part || ""}</td>` : ""}${kind !== "team" ? h`<td>${p.grade || ""}</td>` : ""}<td class="small">${contact(p)}</td>
+          ${kind === "cast" ? h`<td class="r num">${p.role && pieceCount[p.role.toLowerCase()] ? pieceCount[p.role.toLowerCase()] : ""}</td>` : ""}
+          <td class="no-print r" style="white-space:nowrap"><button class="btn sm ghost" data-mv="up" data-pid="${p.id}" ${i === 0 ? raw("disabled") : ""} aria-label="Move up">↑</button><button class="btn sm ghost" data-mv="down" data-pid="${p.id}" ${i === list.length - 1 ? raw("disabled") : ""} aria-label="Move down">↓</button>
+            <button class="btn sm" data-pedit="${p.id}">Edit</button> <button class="btn sm ghost" data-pdel="${p.id}" aria-label="Remove ${p.name}">✕</button></td></tr>`)}</table></div>` : h`<div class="empty small">No one added yet.</div>`}
+      <form class="addrow no-print" data-add="${kind}" novalidate><input type="text" name="role" list="dl-${roleList(kind)}" placeholder="${ROLE_LABEL[kind]}" aria-label="${ROLE_LABEL[kind]}"><input type="text" name="name" placeholder="Name" aria-label="Name">
+        ${vp(kind) ? h`<input type="text" name="voice_part" list="dl-voice_part" placeholder="Voice part" aria-label="Voice part" style="max-width:140px">` : ""}
+        ${kind !== "team" ? h`<input type="text" name="grade" placeholder="Grade" aria-label="Grade" style="max-width:90px">` : ""}<button class="btn sm primary">${icon("plus")}Add</button></form>
+    </section>`;
   };
+  const hasPit = mus || people.some((p) => p.kind === "pit");
+  box.innerHTML = h`<div class="print-only"><h2>Cast &amp; crew</h2></div>${section("team")}${section("cast")}${hasPit ? section("pit") : ""}${section("crew")}`.s;
+  $$("[data-add]", box).forEach((f) => (f.onsubmit = async (e) => {
+    e.preventDefault(); const d = formData(f);
+    if (!d.name.trim()) { $("[name=name]", f).focus(); return; }
+    try { await api("POST", `/api/shows/${id}/people`, { people: [{ ...d, kind: f.dataset.add }] }); SHOW_TAB = "people"; reload(); } catch (err) { toast(err.message, true); }
+  }));
+  $$("[data-mv]", box).forEach((b) => (b.onclick = async () => { await api("PUT", "/api/show-people/" + b.dataset.pid, { move: b.dataset.mv }); reload(); }));
+  $$("[data-pdel]", box).forEach((b) => (b.onclick = () => { const p = people.find((x) => x.id === +b.dataset.pdel);
+    confirmBox(`Remove ${p.name}?`, `${p.name}${p.role ? " (" + p.role + ")" : ""} will be taken off this show's list.`, "Remove", async () => { await api("DELETE", "/api/show-people/" + p.id); reload(); }); }));
+  $$("[data-pedit]", box).forEach((b) => (b.onclick = () => {
+    const p = people.find((x) => x.id === +b.dataset.pedit);
+    const f = modal({ title: "Edit " + p.name,
+      body: h`<div class="grid">${fld("Group", sel("kind", [["team", "Production team"], ["cast", "Cast"], ["pit", "Pit orchestra / band"], ["crew", "Crew"]], p.kind))}${fld("Name", inp("name", p))}
+        ${fld("Role / position / instrument", h`<input type="text" id="f-role" name="role" list="dl-${roleList(p.kind)}" value="${p.role || ""}">`)}
+        ${fld("Voice part", h`<input type="text" id="f-voice_part" name="voice_part" list="dl-voice_part" value="${p.voice_part || ""}">`)}${fld("Grade", inp("grade", p))}
+        ${fld("Email", h`<input type="email" id="f-email" name="email" value="${p.email || ""}">`)}${fld("Phone", h`<input type="tel" id="f-phone" name="phone" value="${p.phone || ""}">`)}
+        ${fld("Notes", inp("notes", p, 'placeholder="e.g. Understudy for Jo; needs a quick change in Act 2"'), "full")}</div>`,
+      onOk: async (f) => { await api("PUT", "/api/show-people/" + p.id, formData(f)); toast("Saved"); reload(); } });
+    $("#f-kind", f).onchange = (e) => { $("#f-role", f).setAttribute("list", "dl-" + roleList(e.target.value)); };
+  }));
+  $$("[data-import]", box).forEach((b) => (b.onclick = () => {
+    const kind = b.dataset.import;
+    let get;
+    const f = modal({ title: "Add " + KIND[kind].toLowerCase() + " from a list", ok: "Add people", wide: true, body: h`<div id="impbox"></div>`,
+      onOk: async () => { const ps = get(); if (!ps.length) throw new Error("Paste at least one name first."); await api("POST", `/api/shows/${id}/people`, { people: ps }); toast(`Added ${ps.length} ${ps.length === 1 ? "person" : "people"}`); reload(); } });
+    get = peopleImporter($("#impbox", f), kind);
+    $("[data-paste]", f).focus();
+  }));
+  const fill = $("[data-fillteam]", box);
+  if (fill) fill.onclick = () => {
+    const have = new Set(people.filter((p) => p.kind === "team").map((p) => (p.role || "").toLowerCase()));
+    const rows = (S.lists.team_position || []).filter((r) => !have.has(r.toLowerCase())).slice(0, 10).map((role) => ({ role, name: "" }));
+    let get;
+    const f = modal({ title: "Fill in production team positions", ok: "Add to team", wide: true, body: h`<div id="teamm"></div>`,
+      onOk: async () => { const ps = get(); if (!ps.length) throw new Error("Type a name next to at least one position."); await api("POST", `/api/shows/${id}/people`, { people: ps }); toast("Production team updated"); reload(); } });
+    get = teamForm($("#teamm", f), rows.length ? rows : [{ role: "", name: "" }]);
+  };
+}
+
+function showNumbersTab(box, id, numbers, items, reload) {
+  const used = {}; items.forEach((l) => l.scene && (used[l.scene.toLowerCase()] = (used[l.scene.toLowerCase()] || 0) + l.qty));
+  const acts = []; numbers.forEach((n) => { const a = n.act ? "Act " + n.act : "Songs"; let g = acts.find((x) => x[0] === a); if (!g) acts.push((g = [a, []])); g[1].push(n); });
+  box.innerHTML = h`<div class="print-only"><h2>Musical numbers</h2></div>
+    <section class="panel"><header><h2>Musical numbers</h2><span class="muted small">${numbers.length}</span><span class="more no-print"><button class="btn sm" data-numimport>Paste a song list</button></span></header>
+    ${numbers.length ? h`<div class="tablewrap"><table><tr><th style="width:52px">No.</th><th>Song</th><th>Sung by</th><th>Scene</th><th class="r">Costumes</th><th class="no-print"></th></tr>
+      ${acts.map(([a, ns]) => h`<tr class="group-h"><td colspan="6">${a}</td></tr>${ns.map((n) => h`<tr><td class="num">${n.number || ""}</td><td><b>${n.title}</b>${n.notes ? h`<div class="small muted">${n.notes}</div>` : ""}</td><td class="small">${n.singers || ""}</td><td class="small">${n.scene || ""}</td>
+        <td class="r num">${used[numberLabel(n).toLowerCase()] || ""}</td>
+        <td class="no-print r" style="white-space:nowrap"><button class="btn sm ghost" data-nmv="up" data-nid="${n.id}" ${n === numbers[0] ? raw("disabled") : ""} aria-label="Move up">↑</button><button class="btn sm ghost" data-nmv="down" data-nid="${n.id}" ${n === numbers[numbers.length - 1] ? raw("disabled") : ""} aria-label="Move down">↓</button>
+          <button class="btn sm" data-nedit="${n.id}">Edit</button> <button class="btn sm ghost" data-ndel="${n.id}" aria-label="Remove ${n.title}">✕</button></td></tr>`)}`)}</table></div>`
+      : h`<div class="empty">No musical numbers yet. Paste the song list from the script or program, or add songs one at a time below.</div>`}
+    <form class="addrow no-print" id="numadd" novalidate><input type="text" name="act" placeholder="Act" aria-label="Act" style="max-width:70px" value="${numbers.length ? numbers[numbers.length - 1].act || "" : "1"}"><input type="text" name="number" placeholder="No." aria-label="Number" style="max-width:70px">
+      <input type="text" name="title" placeholder="Song title" aria-label="Song title"><input type="text" name="singers" placeholder="Sung by" aria-label="Sung by" list="dl-characters"><button class="btn sm primary">${icon("plus")}Add</button></form></section>
+    <p class="small muted no-print" style="margin-top:10px">Songs show up as scene choices when you check costumes and props out to this show, so you can see what each number needs.</p>`.s;
+  $("#numadd", box).onsubmit = async (e) => { e.preventDefault(); const d = formData($("#numadd", box)); if (!d.title.trim()) { $("#numadd [name=title]", box).focus(); return; }
+    try { await api("POST", `/api/shows/${id}/numbers`, { numbers: [d] }); reload(); } catch (err) { toast(err.message, true); } };
+  $$("[data-nmv]", box).forEach((b) => (b.onclick = async () => { await api("PUT", "/api/show-numbers/" + b.dataset.nid, { move: b.dataset.nmv }); reload(); }));
+  $$("[data-ndel]", box).forEach((b) => (b.onclick = () => { const n = numbers.find((x) => x.id === +b.dataset.ndel); confirmBox(`Remove “${n.title}”?`, "It will be taken off this show's song list.", "Remove", async () => { await api("DELETE", "/api/show-numbers/" + n.id); reload(); }); }));
+  $$("[data-nedit]", box).forEach((b) => (b.onclick = () => { const n = numbers.find((x) => x.id === +b.dataset.nedit);
+    modal({ title: "Edit " + n.title, body: h`<div class="grid">${fld("Act", inp("act", n))}${fld("No.", inp("number", n))}${fld("Song title", inp("title", n), "wide")}${fld("Sung by", h`<input type="text" id="f-singers" name="singers" list="dl-characters" value="${n.singers || ""}">`, "full")}
+      ${fld("Scene", inp("scene", n))}${fld("Notes", inp("notes", n, 'placeholder="e.g. Quick change into Act 2 dress before this"'), "wide")}</div>`,
+      onOk: async (f) => { await api("PUT", "/api/show-numbers/" + n.id, formData(f)); reload(); } }); }));
+  $("[data-numimport]", box).onclick = () => { let get;
+    const f = modal({ title: "Paste a song list", ok: "Add songs", wide: true, body: h`<div id="numimp"></div>`,
+      onOk: async () => { const ns = get(); if (!ns.length) throw new Error("Paste at least one song first."); await api("POST", `/api/shows/${id}/numbers`, { numbers: ns }); toast(`Added ${ns.length} song${ns.length === 1 ? "" : "s"}`); reload(); } });
+    get = numbersImporter($("#numimp", f)); $("[data-num]", f).focus(); };
+}
+
+function showMaterialsTab(box, id, mats, reload) {
+  const groups = {}; mats.forEach((m) => (groups[m.category || "Other materials"] ||= []).push(m));
+  box.innerHTML = h`
+    <section class="panel no-print" style="margin-bottom:18px"><div class="body">
+      <div class="grid" style="margin-bottom:10px">${fld("Type of material", h`<input type="text" id="mat-cat" list="dl-material_type" placeholder="e.g. Script">`, "", "Applied to the files you add next.")}${fld("Description (optional)", h`<input type="text" id="mat-cap" placeholder="e.g. Final rehearsal draft, revised 3/2">`, "wide")}</div>
+      <div id="matdrop"></div></div></section>
+    <datalist id="dl-material_type">${(S.lists.material_type || []).map((v) => h`<option value="${v}">`)}</datalist>
+    ${mats.length ? Object.entries(groups).map(([g, ms]) => h`<section class="panel" style="margin-bottom:14px"><header><h2>${g}</h2><span class="muted small">${ms.length}</span></header><div class="tablewrap"><table>
+      ${ms.map((m) => h`<tr><td style="width:56px">${fileBadge(m.original_name || m.file)}</td>
+        <td><a href="${showFileURL(m.file)}" target="_blank" rel="noopener"><b>${m.original_name || m.file}</b></a>${m.caption ? h`<div class="small muted">${m.caption}</div>` : ""}</td>
+        <td class="small num" style="white-space:nowrap">${fmtSize(m.size)}</td><td class="small muted">${fmtDate(m.created_at)}${m.created_by ? " · " + m.created_by : ""}</td>
+        <td class="r no-print" style="white-space:nowrap"><a class="btn sm" href="${showFileURL(m.file, true)}">Download</a> <button class="btn sm ghost" data-medit="${m.id}">Edit</button> <button class="btn sm ghost" data-mdel="${m.id}" aria-label="Delete ${m.original_name}">✕</button></td></tr>`)}</table></div></section>`)
+      : h`<div class="panel"><div class="empty">No materials yet. Add the script, score, rehearsal schedule or anything else the show needs.</div></div>`}`.s;
+  dropzone($("#matdrop", box), { label: "Add materials", sub: "Click to choose files, or drag them here. PDFs, Word, Excel, audio, video, images and zip files; up to 200 MB each.",
+    onFiles: async (files, status) => {
+      try { await uploadAll(`/api/shows/${id}/files?kind=material`, "file", files, { extra: { category: $("#mat-cat", box).value.trim(), caption: $("#mat-cap", box).value.trim() }, status }); toast(`Added ${files.length} file${files.length === 1 ? "" : "s"}`); reload(); }
+      catch (err) { status.textContent = ""; toast(err.message, true); }
+    } });
+  $$("[data-medit]", box).forEach((b) => (b.onclick = () => { const m = mats.find((x) => x.id === +b.dataset.medit);
+    modal({ title: "Edit " + (m.original_name || "file"), body: h`<div class="grid">${fld("Type of material", h`<input type="text" name="category" id="me-cat" list="dl-material_type" value="${m.category || ""}">`)}${fld("Description", h`<input type="text" name="caption" id="me-cap" value="${m.caption || ""}">`, "full")}</div>`,
+      onOk: async (f) => { await api("PUT", "/api/show-files/" + m.id, formData(f)); reload(); } }); }));
+  $$("[data-mdel]", box).forEach((b) => (b.onclick = () => { const m = mats.find((x) => x.id === +b.dataset.mdel);
+    confirmBox("Delete this file?", `${m.original_name} will be removed from this show permanently.`, "Delete file", async () => { await api("DELETE", "/api/show-files/" + m.id); toast("File deleted"); reload(); }); }));
+}
+
+function showPhotosTab(box, id, s, photos, reload) {
+  box.innerHTML = h`<section class="panel no-print" style="margin-bottom:18px"><div class="body"><div id="photodrop"></div></div></section>
+    ${photos.length ? h`<div class="pgrid big">${photos.map((p, i) => h`<figure>
+      <button type="button" class="pimg" data-open="${i}" aria-label="View photo ${i + 1}"><img src="${showFileURL(p.file)}" alt="${p.caption || ""}" loading="lazy"></button>
+      <figcaption>${p.caption || h`<span class="muted">No caption</span>`}${p.file === s.cover ? h` <span class="pill info">Cover</span>` : ""}</figcaption>
+      <div class="pact no-print">${p.file !== s.cover ? h`<button class="btn sm" data-cover="${p.id}">Make cover</button>` : ""}<button class="btn sm ghost" data-pcap="${p.id}">Caption</button><button class="btn sm ghost danger" data-phdel="${p.id}">Delete</button></div></figure>`)}</div>`
+      : h`<div class="panel"><div class="empty">No photos yet. Add rehearsal shots, the set, costumes on stage, cast photos or the poster.</div></div>`}`.s;
+  dropzone($("#photodrop", box), { accept: "image/jpeg,image/png,image/webp,image/gif", label: "Add show photos", sub: "Click to choose, or drag pictures here. Large phone photos are resized automatically.",
+    onFiles: async (files, status) => {
+      const imgs = files.filter(isImage);
+      if (!imgs.length) { toast("Those files aren't photos. Add other files under Materials.", true); return; }
+      try { await uploadAll(`/api/shows/${id}/files?kind=photo`, "file", imgs, { photos: true, status }); toast(`Added ${imgs.length} photo${imgs.length === 1 ? "" : "s"}`); reload(); }
+      catch (err) { status.textContent = ""; toast(err.message, true); }
+    } });
+  $$("[data-open]", box).forEach((b) => (b.onclick = () => lightbox(photos.map((p) => ({ src: showFileURL(p.file), caption: p.caption })), +b.dataset.open)));
+  $$("[data-cover]", box).forEach((b) => (b.onclick = async () => { await api("PUT", "/api/show-files/" + b.dataset.cover, { cover: true }); toast("Cover photo set"); reload(); }));
+  $$("[data-pcap]", box).forEach((b) => (b.onclick = () => { const p = photos.find((x) => x.id === +b.dataset.pcap);
+    modal({ title: "Photo caption", body: h`<label for="pc">Caption</label><input type="text" id="pc" value="${p.caption || ""}" placeholder="e.g. Act 2 finale, opening night">`,
+      onOk: async (f) => { await api("PUT", "/api/show-files/" + p.id, { caption: $("#pc", f).value }); reload(); } }); }));
+  $$("[data-phdel]", box).forEach((b) => (b.onclick = () => confirmBox("Delete this photo?", "The photo will be removed from this show permanently.", "Delete photo", async () => { await api("DELETE", "/api/show-files/" + b.dataset.phdel); toast("Photo deleted"); reload(); })));
 }
 
 // ---------- activity ----------
@@ -1012,12 +1495,12 @@ async function viewSettings() {
   const sys = await GET("/api/system");
   const dir = isDirector();
   const [users, backups, cloud] = dir ? await Promise.all([GET("/api/users"), GET("/api/backups"), GET("/api/cloud")]) : [[], null, null];
-  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"]];
+  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"], ["team_position", "Production team positions"], ["crew_position", "Crew positions"], ["instrument", "Pit instruments"], ["voice_part", "Voice parts"], ["material_type", "Show material types"]];
   shell("settings", h`
     ${page("Settings", dir ? "Settings" : "My account")}
     <div class="stack">
       ${dir ? h`<section class="panel" id="cloudp"><header><h2>Cloud backup</h2>${cloud.folder ? (cloud.last_error ? h`<span class="pill bad">Problem</span>` : h`<span class="pill good">On</span>`) : h`<span class="pill warn">Off</span>`}</header><div class="body">
-        <p style="margin-top:0;max-width:70ch">Keep a copy of the database and photos in your school OneDrive or Google Drive folder. The app updates the copy about a minute and a half after each change, and keeps a daily copy for 60 days. If this computer fails, install the app on a new one, set the same folder here and click <b>Restore</b>.</p>
+        <p style="margin-top:0;max-width:70ch">Keep a copy of the database, photos and show materials in your school OneDrive or Google Drive folder. The app updates the copy about a minute and a half after each change, and keeps a daily copy for 60 days. If this computer fails, install the app on a new one, set the same folder here and click <b>Restore</b>.</p>
         ${cloud.last_error ? h`<div class="errbox">${cloud.last_error}</div>` : ""}
         ${cloud.folder ? h`<p class="small">Saving to <b class="mono">${cloud.backup_folder}</b><br>Last copied: <b>${cloud.last_sync ? fmtWhen(cloud.last_sync) + " (" + cloud.last_sync + ")" : "not yet this session"}</b></p>` : ""}
         <form id="cloudf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end" novalidate>
@@ -1042,31 +1525,33 @@ async function viewSettings() {
         ${users.map((u) => h`<tr><td><b>${u.display_name || ""}</b></td><td class="mono">${u.username}</td><td>${u.role === "director" ? "Director" : "Assistant"}</td><td class="num">${u.last_login ? fmtWhen(u.last_login) : "Never"}</td>
           <td>${u.active ? (u.must_change ? h`<span class="pill info">Temporary password</span>` : h`<span class="pill good">Active</span>`) : h`<span class="pill mute">Disabled</span>`}</td>
           <td class="r"><button class="btn sm" data-user="${u.id}">Manage</button></td></tr>`)}</table></div>
-        <div class="body small muted">Directors can do everything. Assistants can add and edit items, renters, rentals and show checkouts, but can't delete records, change lists, manage users or restore backups.</div></section>
+        <div class="body small muted">Directors can do everything. Assistants can add and edit items, renters, rentals, shows, cast and crew, materials and photos, but can't delete records, change lists, manage users or restore backups.</div></section>
 
       <section class="panel"><header><h2>Dropdown lists</h2></header><div class="body">
-        <p class="small muted" style="margin-top:0">These are the suggestions offered when you add items and the choices in the search filters. Values already used on items always appear in the filters too.</p>
+        <p class="small muted" style="margin-top:0">These are the suggestions offered when you add items, shows, cast and crew, and the choices in the search filters. Add any positions your shows need; people can also type a one-off position on a show. The first positions in the production team list are the ones offered when you create a show.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${LISTS.map(([k, t]) => h`<button class="btn sm" data-list="${k}" data-title="${t}">${t} <span class="muted">(${(S.configured[k] || []).length})</span></button>`)}</div></div></section>
 
       <section class="panel"><header><h2>Backups on this computer</h2><button class="btn sm more" id="bknow">Back up now</button></header><div class="body">
-        <p class="small muted" style="margin-top:0">A backup is made automatically every day the program runs (the last 30 are kept), and before any restore. Folder: <span class="mono">${backups.folder}</span> <button class="btn sm ghost" id="openbk">Open folder</button></p>
+        <p class="small muted" style="margin-top:0">A backup of the database is made automatically every day the program runs (the last 30 are kept), and before any restore. Photos and show files stay in the data folder and are included in cloud backup. Folder: <span class="mono">${backups.folder}</span> <button class="btn sm ghost" id="openbk">Open folder</button></p>
         ${backups.backups.length ? h`<div class="tablewrap"><table><tr><th>File</th><th>Saved</th><th class="r">Size</th><th></th></tr>${backups.backups.slice(0, 12).map((b) => h`<tr><td class="mono small">${b.name}</td><td class="num">${b.modified}</td><td class="r num">${(b.size / 1048576).toFixed(1)} MB</td><td class="r"><button class="btn sm" data-restore-local="${b.name}">Restore</button></td></tr>`)}</table></div>` : h`<p class="muted">No backups yet.</p>`}
       </div></section>` : ""}
 
       <section class="panel"><header><h2>Export to Excel</h2></header><div class="body" style="display:flex;gap:8px;flex-wrap:wrap">
-        <a class="btn" href="/api/export/items.csv">Inventory</a><a class="btn" href="/api/export/shows.csv">Show history</a><a class="btn" href="/api/export/rentals.csv">Rental history</a><a class="btn" href="/api/export/renters.csv">Renters</a></div></section>
+        <a class="btn" href="/api/export/items.csv">Inventory</a><a class="btn" href="/api/export/shows.csv">Show history</a><a class="btn" href="/api/export/people.csv">Cast &amp; crew</a><a class="btn" href="/api/export/numbers.csv">Musical numbers</a><a class="btn" href="/api/export/rentals.csv">Rental history</a><a class="btn" href="/api/export/renters.csv">Renters</a></div></section>
 
       <section class="panel"><header><h2>About this installation</h2></header><div class="body small">
         <div class="dl"><div><span>Version</span><b>${sys.version}</b></div><div><span>Address</span><b class="mono">http://127.0.0.1:${sys.port}</b></div><div style="grid-column:1/-1"><span>Data folder</span><b class="mono">${sys.data_folder}</b></div></div>
         ${sys.network && sys.lan_urls && sys.lan_urls.length ? h`<p>Other computers on the school network can open: ${sys.lan_urls.map((u) => h`<span class="mono">${u}</span> `)}</p>` : ""}
-        ${dir ? h`<p style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:0"><button class="btn sm" id="opendata">Open data folder</button><button class="btn sm danger" id="quit">Close the inventory program</button></p>` : ""}
+        ${dir ? h`<p style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:0"><button class="btn sm" id="opendata">Open data folder</button><button class="btn sm danger" id="quit">Close the AHS Theatre Application</button></p>` : ""}
       </div></section>
     </div>`);
 
   const pwf = $("#pwf");
+  pwMeter($("#pw1"));
   pwf.onsubmit = async (e) => { e.preventDefault(); const d = formData(pwf), eb = $(".errbox", pwf);
+    if (!pwOK(d.new)) { eb.textContent = "Choose a stronger password. " + PW_RULE; eb.hidden = false; return; }
     if (d.new !== d.confirm) { eb.textContent = "The two new passwords don't match."; eb.hidden = false; return; }
-    try { await api("POST", "/api/me/password", d); pwf.reset(); eb.hidden = true; toast("Password changed"); } catch (err) { eb.textContent = err.message; eb.hidden = false; } };
+    try { await api("POST", "/api/me/password", d); pwf.reset(); $("#pw1").dispatchEvent(new Event("input")); eb.hidden = true; toast("Password changed"); } catch (err) { eb.textContent = err.message; eb.hidden = false; } };
   if (!dir) return;
 
   // cloud
@@ -1091,23 +1576,25 @@ async function viewSettings() {
   if ($("#syncnow")) $("#syncnow").onclick = async () => { try { await api("POST", "/api/cloud/sync"); toast("Backed up to the cloud folder"); viewSettings(); } catch (err) { toast(err.message, true); } };
   if ($("#cloudoff")) $("#cloudoff").onclick = () => confirmBox("Turn off cloud backup?", "Copies already in the cloud folder are left there.", "Turn off", () => saveCloud("", false));
   const restore = (source, name, label) => modal({ title: "Restore " + label + "?", ok: "Restore", okClass: "primary",
-    body: h`<p>Everything in the inventory will be replaced with this backup. A safety copy of the current data is saved first, so you can undo this from the backups list.</p><p class="small muted">Users and passwords come from the backup too. After restoring, sign in with an account from that backup.</p>`,
+    body: h`<p>Everything in the application will be replaced with this backup. A safety copy of the current data is saved first, so you can undo this from the backups list.</p><p class="small muted">Users and passwords come from the backup too. After restoring, sign in with an account from that backup.</p>`,
     onOk: async () => { const r = await api("POST", "/api/restore", { source, name }); toast(`Restored${r.photos ? `, plus ${r.photos} photos` : ""}`); setTimeout(() => location.reload(), 900); } });
   $$("[data-restore-cloud]").forEach((b) => (b.onclick = () => restore("cloud", b.dataset.restoreCloud, b.dataset.label.toLowerCase())));
   $$("[data-restore-local]").forEach((b) => (b.onclick = () => restore("local", b.dataset.restoreLocal, b.dataset.restoreLocal)));
 
   // users
-  $("#adduser").onclick = () => modal({ title: "Add a user", ok: "Add user",
+  $("#adduser").onclick = () => { const mf = modal({ title: "Add a user", ok: "Add user",
     body: h`<div class="grid">${fld("Name", h`<input type="text" name="display_name" id="u-name" placeholder="e.g. Jordan (stage manager)">`, "full")}${fld("Username", h`<input type="text" name="username" id="u-user" autocomplete="off">`)}
-      ${fld("Role", sel("role", [["assistant", "Assistant"], ["director", "Director"]], "assistant"))}${fld("Temporary password", h`<input type="text" name="password" id="u-pw" autocomplete="off">`, "full", "At least 8 characters. They'll choose their own when they first sign in.")}</div>`,
-    onOk: async (f) => { await api("POST", "/api/users", formData(f)); toast("User added"); viewSettings(); } });
+      ${fld("Role", sel("role", [["assistant", "Assistant"], ["director", "Director"]], "assistant"))}${fld("Temporary password", h`<input type="text" name="password" id="u-pw" autocomplete="off">`, "full", "They'll choose their own when they first sign in.")}</div>`,
+    onOk: async (f) => { const d = formData(f); if (!pwOK(d.password)) throw new Error("The temporary password needs " + PW_RULE.charAt(0).toLowerCase() + PW_RULE.slice(1)); await api("POST", "/api/users", d); toast("User added"); viewSettings(); } });
+    pwMeter($("#u-pw", mf)); };
   $$("[data-user]").forEach((b) => (b.onclick = () => {
     const u = users.find((x) => x.id === +b.dataset.user), self = u.id === S.me.id;
-    modal({ title: "Manage " + (u.display_name || u.username),
+    const mf = modal({ title: "Manage " + (u.display_name || u.username),
       body: h`<div class="grid">${fld("Name", h`<input type="text" name="display_name" id="mu-name" value="${u.display_name || ""}">`, "full")}
         ${self ? "" : h`${fld("Role", sel("role", [["assistant", "Assistant"], ["director", "Director"]], u.role))}<div style="align-self:end"><label class="check"><input type="checkbox" name="active" id="mu-act" ${u.active ? raw("checked") : ""}> Account enabled</label></div>`}
         ${fld("Set a new temporary password", h`<input type="text" name="password" id="mu-pw" autocomplete="off" placeholder="Leave blank to keep the current one">`, "full", self ? "To change your own password, use My account." : "They'll be asked to change it at their next sign-in.")}</div>`,
-      onOk: async (f) => { const d = formData(f); if (self) delete d.password; await api("PUT", "/api/users/" + u.id, d); toast("Saved"); viewSettings(); } });
+      onOk: async (f) => { const d = formData(f); if (self) delete d.password; if (d.password && !pwOK(d.password)) throw new Error("The temporary password needs " + PW_RULE.charAt(0).toLowerCase() + PW_RULE.slice(1)); await api("PUT", "/api/users/" + u.id, d); toast("Saved"); viewSettings(); } });
+    if (!self) pwMeter($("#mu-pw", mf));
   }));
   // lists
   $$("[data-list]").forEach((b) => (b.onclick = () => modal({ title: b.dataset.title,
@@ -1116,9 +1603,9 @@ async function viewSettings() {
   $("#bknow").onclick = async () => { try { const r = await api("POST", "/api/backups"); toast("Saved " + r.name); viewSettings(); } catch (err) { toast(err.message, true); } };
   $("#openbk").onclick = () => api("POST", "/api/open-folder", { which: "backups" });
   $("#opendata").onclick = () => api("POST", "/api/open-folder", { which: "data" });
-  $("#quit").onclick = () => confirmBox("Close the inventory program?", "Everything is saved. Open it again any time from the desktop shortcut.", "Close program", async () => {
+  $("#quit").onclick = () => confirmBox("Close the AHS Theatre Application?", "Everything is saved. Open it again any time from the desktop shortcut.", "Close program", async () => {
     await api("POST", "/api/shutdown");
-    $("#app").innerHTML = h`<div class="boot"><img src="logo.png" alt="" width="96" height="96"><p>The inventory program is closed. You can close this tab.</p></div>`.s;
+    $("#app").innerHTML = h`<div class="boot"><img src="logo.png" alt="" width="96" height="96"><p>The AHS Theatre Application is closed. You can close this tab.</p></div>`.s;
   });
 }
 
