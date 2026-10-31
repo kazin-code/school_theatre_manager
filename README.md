@@ -8,7 +8,7 @@ Originally built for the Alton High School Theatre program.
 
 ## ⬇️ Download and install
 
-**[Download the installer (School-Theatre-Manager-Setup.exe)](download/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.2.0, about 4 MB
+**[Download the installer (School-Theatre-Manager-Setup.exe)](installer/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.2.0, about 4 MB
 
 1. Click the link above. The file saves to your **Downloads** folder. (If GitHub opens a page instead, click the **Download** button ⬇ on the right.)
 2. Double-click **School-Theatre-Manager-Setup.exe**.
@@ -85,7 +85,7 @@ branding.go          school name, program name, colors and logo (PNG/JPG/GIF/ICO
 cloud.go             cloud-folder backup and restore
 platform_*.go        Windows helpers (browser, message boxes, data folder)
 web/                 interface (index.html, app.js, app.css, default logo)
-installer/           NSIS script, manifest, installer artwork, user README
+installer/           ready-to-run Setup.exe, NSIS script, manifest, installer artwork, user README
 examples/            sample school logos
 build.sh / build.ps1 build the exe and the installer
 ```
@@ -104,7 +104,7 @@ Requirements: Go 1.24+, [NSIS 3](https://nsis.sourceforge.io/), and `rsrc` for t
 ./build.sh
 ```
 
-Both produce `dist/SchoolTheatre.exe` and `dist/School-Theatre-Manager-Setup-<version>.exe`. To publish a new version for download, copy the setup file to `download/School-Theatre-Manager-Setup.exe` and commit it.
+Both produce `dist/SchoolTheatre.exe` and `dist/School-Theatre-Manager-Setup-<version>.exe`. To publish a new version for download, copy the setup file to `installer/School-Theatre-Manager-Setup.exe` and commit it.
 
 To run from source while developing (any OS):
 

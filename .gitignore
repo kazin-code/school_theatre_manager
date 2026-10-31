@@ -8,5 +8,5 @@ data/
 *.db-wal
 *.db-shm
 
-# the ready-to-run installer for non-technical users is kept in the repo
-!download/*.exe
+# the ready-to-run installer for non-technical users is kept in the repo (installer/)
+!installer/School-Theatre-Manager-Setup.exe
