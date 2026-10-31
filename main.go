@@ -81,6 +81,7 @@ func main() {
 	reset := flag.Bool("reset-password", false, "reset a director password (must be run as administrator)")
 	noBrowser := flag.Bool("no-browser", false, "do not open the browser")
 	dataFlag := flag.String("data", "", "data folder")
+	network := flag.String("network", "", "with --init-db: \"on\" lets other computers on the network connect, \"off\" keeps it on this computer")
 	flag.Parse()
 
 	dataDir = *dataFlag
@@ -103,6 +104,10 @@ func main() {
 			}
 			logActivity(u, "account", "Director account created by installer")
 		}
+		if *network == "on" || *network == "off" {
+			cfg.AllowNetwork = *network == "on"
+			saveConfig()
+		}
 		logActivity("Installer", "system", "Database ready at "+dbPath())
 		db.Close()
 		return
@@ -113,10 +118,9 @@ func main() {
 		return
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/", cfg.Port)
 	// If the program is already running, just open the browser to it.
 	loadConfigOnly()
-	url = fmt.Sprintf("http://127.0.0.1:%d/", cfg.Port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/", cfg.Port)
 	if alreadyRunning(cfg.Port) {
 		if !*noBrowser {
 			openBrowser(url)
