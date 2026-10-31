@@ -1,2 +1,2 @@
-# ahs_inventory
-Inventory system for Alton Highschool
+# school_theatre_manager
+Inventory system for YOUR school
