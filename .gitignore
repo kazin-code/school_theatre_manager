@@ -1,0 +1,9 @@
+# build output
+dist/
+*.exe
+*.syso
+# local test data
+data/
+*.db
+*.db-wal
+*.db-shm
