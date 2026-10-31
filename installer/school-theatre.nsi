@@ -75,12 +75,19 @@ Var hPass2
 Var AdminName
 Var AdminUser
 Var AdminPass
+Var DataChoice
+Var DelOld
+Var OldCopy
+Var hKeep
+Var hFresh
+Var hDelOld
 
 ; ---------- pages ----------
 !define MUI_WELCOMEPAGE_TITLE "Set up School Theatre Manager"
 !define MUI_WELCOMEPAGE_TEXT "School Theatre Manager runs a school theatre program: plays and musicals with their cast, crew, pit, materials and photos, plus the costume, prop and set inventory, show checkouts and rentals.$\r$\n$\r$\nSetup will ask for your school's name and logo so the program carries your school's branding.$\r$\n$\r$\nEverything is stored on this computer. No internet connection is needed.$\r$\n$\r$\nClick Next to continue."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
+Page custom ExistingPage ExistingLeave
 !insertmacro MUI_PAGE_COMPONENTS
 Page custom SchoolPage SchoolLeave
 Page custom AccountPage AccountLeave
@@ -132,6 +139,8 @@ Function .onInit
   ReadINIStr $Tagline "$BrandIni" "branding" "tagline"
   ClearErrors
   StrCpy $ShortcutName "${APPNAME}"
+  StrCpy $DataChoice "keep"
+  StrCpy $DelOld "0"
 FunctionEnd
 
 Function un.onInit
@@ -202,6 +211,87 @@ Function SafeName
   StrCpy $R0 $R1
 FunctionEnd
 
+; ---------- existing data: keep it or start fresh ----------
+Function ExistingPage
+  ${If} $IsUpgrade != "1"
+  ${AndIf} $DataChoice != "fresh"
+    Abort ; nothing installed yet
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "Existing data found" "School Theatre Manager has already been set up on this computer."
+  nsDialogs::Create 1018
+  Pop $Dlg
+  ${If} $Dlg == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0 0 100% 24u "This computer already has shows, inventory, users, photos and an activity history in $DataDir. What should Setup do with them?"
+  Pop $0
+  ${NSD_CreateRadioButton} 0 30u 100% 12u "Keep everything (recommended)"
+  Pop $hKeep
+  ${NSD_CreateLabel} 12u 43u 95% 18u "Update the program and keep all shows, inventory, photos, users, branding and history, as they are now."
+  Pop $0
+  ${NSD_CreateRadioButton} 0 66u 100% 12u "Start fresh"
+  Pop $hFresh
+  ${NSD_CreateLabel} 12u 79u 95% 26u "Set the program up as if it were new: an empty database, new school details and a new director account. The old data is moved to a folder named $\"${DATANAME} (old data, date)$\" so it can still be recovered."
+  Pop $0
+  ${NSD_CreateCheckbox} 12u 108u 95% 12u "Permanently delete the old data instead of keeping a copy"
+  Pop $hDelOld
+  ${If} $DataChoice == "fresh"
+    ${NSD_Check} $hFresh
+  ${Else}
+    ${NSD_Check} $hKeep
+    EnableWindow $hDelOld 0
+  ${EndIf}
+  ${If} $DelOld == "1"
+    ${NSD_Check} $hDelOld
+  ${EndIf}
+  ${NSD_OnClick} $hKeep ExistingToggle
+  ${NSD_OnClick} $hFresh ExistingToggle
+  nsDialogs::Show
+FunctionEnd
+
+Function ExistingToggle
+  ${NSD_GetState} $hFresh $0
+  ${If} $0 == ${BST_CHECKED}
+    EnableWindow $hDelOld 1
+  ${Else}
+    ${NSD_Uncheck} $hDelOld
+    EnableWindow $hDelOld 0
+  ${EndIf}
+FunctionEnd
+
+Function ExistingLeave
+  ${NSD_GetState} $hFresh $0
+  ${NSD_GetState} $hDelOld $1
+  ${If} $0 != ${BST_CHECKED}
+    StrCpy $DataChoice "keep"
+    StrCpy $DelOld "0"
+    StrCpy $IsUpgrade "1"
+    ; back to the saved school details in case the person changed their mind
+    ReadINIStr $School  "$BrandIni" "branding" "school"
+    ReadINIStr $Program "$BrandIni" "branding" "program"
+    ReadINIStr $Short   "$BrandIni" "branding" "short"
+    ReadINIStr $Tagline "$BrandIni" "branding" "tagline"
+    ClearErrors
+    Return
+  ${EndIf}
+  ${If} $1 == ${BST_CHECKED}
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Permanently delete all existing shows, inventory, rentals, photos, files, users and history on this computer?$\r$\n$\r$\nThis can't be undone. Cloud backup copies are not touched." IDYES +2
+    Abort
+    StrCpy $DelOld "1"
+  ${Else}
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Start fresh?$\r$\n$\r$\nThe existing data will be moved to a separate folder next to the new one, and the program will start empty." IDYES +2
+    Abort
+    StrCpy $DelOld "0"
+  ${EndIf}
+  StrCpy $DataChoice "fresh"
+  StrCpy $IsUpgrade "0"   ; ask for school details and a new director account
+  StrCpy $School ""
+  StrCpy $Program ""
+  StrCpy $Short ""
+  StrCpy $Tagline ""
+  StrCpy $LogoPath ""
+FunctionEnd
+
 ; ---------- your school page ----------
 Function SchoolPage
   !insertmacro MUI_HEADER_TEXT "Your school" "These details brand the program for your theatre. You can change them later in Settings."
@@ -237,6 +327,7 @@ Function SchoolPage
   Pop $0
   ${NSD_OnClick} $0 BrowseLogo
   ${If} ${FileExists} "$DataDir\branding\logo.png"
+  ${AndIf} $DataChoice != "fresh"
     ${NSD_CreateLabel} 36% 98u 64% 22u "Leave blank to keep the logo you already have. PNG, JPG, GIF or ICO; a square image looks best."
   ${Else}
     ${NSD_CreateLabel} 36% 98u 64% 22u "Optional. PNG, JPG, GIF or ICO; a square image looks best. Without one, a stage-curtain logo is used."
@@ -383,6 +474,26 @@ Section "-Program" SecMain
   ${EndIf}
   RMDir /r "$SMPROGRAMS\${APPNAME}"
 
+  ; starting fresh: set the old data aside (or delete it) before creating a new database
+  ${If} $DataChoice == "fresh"
+  ${AndIf} ${FileExists} "$DataDir\*.*"
+    ${If} $DelOld == "1"
+      DetailPrint "Deleting the old data…"
+      RMDir /r "$DataDir"
+    ${Else}
+      ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
+      StrCpy $OldCopy "$APPDATA\${DATANAME} (old data $2-$1-$0 $4$5)"
+      DetailPrint "Moving the old data to $OldCopy…"
+      ClearErrors
+      Rename "$DataDir" "$OldCopy"
+      ${If} ${Errors}
+        CreateDirectory "$OldCopy"
+        CopyFiles /SILENT "$DataDir\*.*" "$OldCopy"
+        RMDir /r "$DataDir"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
   File "..\dist\${EXE}"
   File "..\app.ico"
   File "README.txt"
@@ -421,6 +532,9 @@ Section "-Program" SecMain
     MessageBox MB_ICONSTOP "Setup couldn't create the database (error $0).$\r$\nCheck that $DataDir can be written to, then run Setup again."
   ${Else}
     DetailPrint "Database ready: $DataDir\inventory.db"
+  ${EndIf}
+  ${If} $OldCopy != ""
+    DetailPrint "Your previous data is kept in $OldCopy"
   ${EndIf}
   ; make sure files the database step just created can be written by everyone who uses the program
   nsExec::ExecToLog 'icacls "$DataDir" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q'
