@@ -6,16 +6,16 @@ It runs entirely offline on one Windows computer. A single installer sets up the
 
 ## ⬇️ Download and install
 
-**[Download the installer (AHS-Theatre-Inventory-Setup.exe)](https://github.com/kazin-code/ahs_inventory/releases/latest/download/AHS-Theatre-Inventory-Setup.exe)**
+**[Download the installer (AHS-Theatre-Inventory-Setup.exe)](download/AHS-Theatre-Inventory-Setup.exe?raw=true)** — version 1.0.0, about 4 MB
 
-1. Click the link above. The file saves to your **Downloads** folder.
+1. Click the link above. The file saves to your **Downloads** folder. (If GitHub opens a page instead, click the **Download** button ⬇ on the right.)
 2. Double-click **AHS-Theatre-Inventory-Setup.exe**.
 3. If Windows says *"Windows protected your PC"*, click **More info**, then **Run anyway**.
 4. Click **Yes** when Windows asks to allow changes.
 5. Follow the steps. When asked, create the director's username and password and write them down somewhere safe.
 6. Open **AHS Theatre Inventory** from the desktop shortcut and sign in.
 
-You need a Windows 10 or 11 computer and permission to install programs (if you don't have it, ask your school's IT department). Older versions are on the [Releases page](https://github.com/kazin-code/ahs_inventory/releases).
+You need a Windows 10 or 11 computer and permission to install programs (if you don't have it, ask your school's IT department).
 
 ## What it does
 
@@ -80,7 +80,7 @@ Requirements: Go 1.24+, [NSIS 3](https://nsis.sourceforge.io/), and `rsrc` for t
 ./build.sh
 ```
 
-Both produce `dist/TheatreInventory.exe` and `dist/AHS-Theatre-Inventory-Setup-<version>.exe`.
+Both produce `dist/TheatreInventory.exe` and `dist/AHS-Theatre-Inventory-Setup-<version>.exe`. To publish a new version for download, copy the setup file to `download/AHS-Theatre-Inventory-Setup.exe` and commit it.
 
 To run from source while developing (any OS):
 
