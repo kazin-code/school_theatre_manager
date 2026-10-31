@@ -1,4 +1,4 @@
-module altontheatre
+module school_theatre_management
 
 go 1.24.7
 
