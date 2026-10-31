@@ -1,4 +1,4 @@
-module school_theatre_management
+module school_theatre_manager
 
 go 1.24.7
 
