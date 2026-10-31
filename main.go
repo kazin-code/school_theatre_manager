@@ -18,7 +18,7 @@ import (
 const (
 	productName = "School Theatre Manager"
 	appID       = "school-theatre-manager"
-	appVersion  = "2.2.1"
+	appVersion  = "2.2.2"
 )
 
 //go:embed web

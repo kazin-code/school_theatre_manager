@@ -8,7 +8,7 @@ Originally built for the Alton High School Theatre program.
 
 ## ⬇️ Download and install
 
-**[Download the installer (School-Theatre-Manager-Setup.exe)](installer/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.2.1, about 4 MB
+**[Download the installer (School-Theatre-Manager-Setup.exe)](installer/School-Theatre-Manager-Setup.exe?raw=true)** — version 2.2.2, about 4 MB
 
 1. Click the link above. The file saves to your **Downloads** folder. (If GitHub opens a page instead, click the **Download** button ⬇ on the right.)
 2. Double-click **School-Theatre-Manager-Setup.exe**.
@@ -42,7 +42,7 @@ Upgrading from the Alton-only versions (*AHS Theatre Inventory* 1.0 or *AHS Thea
 
 ## Running it day to day
 
-**Reinstalling:** if the program is already set up on the computer, Setup asks whether to **keep everything** (the normal choice for updates) or **start fresh**. Starting fresh moves the old data to a dated folder such as `C:\ProgramData\School Theatre Manager (old data 2026-10-31 1415)`, or deletes it permanently if you tick that box, and then sets the program up as new.
+**Reinstalling:** if the program is already set up on the computer, Setup asks whether to **keep everything** (the normal choice for updates; it reuses your saved school details and accounts without asking again) or **start fresh**. Starting fresh moves the old data to a dated folder such as `C:\ProgramData\School Theatre Manager (old data 2026-10-31 1415)`, or deletes it permanently if you tick that box, and then sets the program up as new.
 
 Data lives in `C:\ProgramData\School Theatre Manager` (`inventory.db`, `photos\`, `showfiles\`, `branding\`, `backups\`, `config.json`). Uninstalling keeps it unless you choose to delete it.
 

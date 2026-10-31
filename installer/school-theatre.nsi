@@ -294,6 +294,13 @@ FunctionEnd
 
 ; ---------- your school page ----------
 Function SchoolPage
+  ; keeping existing data: reuse the saved school details instead of asking again
+  ${If} $IsUpgrade == "1"
+  ${AndIf} $DataChoice != "fresh"
+  ${AndIf} $School != ""
+    Call NameFromSaved
+    Abort
+  ${EndIf}
   !insertmacro MUI_HEADER_TEXT "Your school" "These details brand the program for your theatre. You can change them later in Settings."
   nsDialogs::Create 1018
   Pop $Dlg
@@ -335,6 +342,20 @@ Function SchoolPage
   Pop $0
   ${NSD_SetFocus} $hSchool
   nsDialogs::Show
+FunctionEnd
+
+; Works out the shortcut name from the saved program name (used when the school page is skipped).
+Function NameFromSaved
+  StrCpy $LogoPath ""
+  ${If} $Program == ""
+    StrCpy $Program "$School Theatre"
+  ${EndIf}
+  StrCpy $R0 $Program
+  Call SafeName
+  ${If} $R0 == ""
+    StrCpy $R0 "${APPNAME}"
+  ${EndIf}
+  StrCpy $ShortcutName $R0
 FunctionEnd
 
 Function BrowseLogo
