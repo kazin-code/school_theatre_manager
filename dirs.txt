@@ -1,0 +1,5 @@
+node_modules/hono
+node_modules/@hono/node-server
+node_modules/@hono/zod-validator
+node_modules/zod
+node_modules/postgres
