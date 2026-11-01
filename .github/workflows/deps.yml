@@ -1,0 +1,61 @@
+name: Add packages
+
+# npm can't reach the registry from the build agent that writes most of this code, so packages are
+# added here: list them in .github/deps-request.json and push to dev. This workflow installs them,
+# commits package.json and package-lock.json to dev, and puts the new node_modules folders on the
+# ci-deps branch (a cache the agent fetches with git; safe to delete).
+
+on:
+  push:
+    branches: [dev]
+    paths: [".github/deps-request.json"]
+
+permissions:
+  contents: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the requested packages
+        run: |
+          npm ci --ignore-scripts
+          ls node_modules node_modules/@*/ 2>/dev/null | sort > /tmp/before.txt
+          deps=$(node -p "(require('./.github/deps-request.json').dependencies||[]).join(' ')")
+          dev=$(node -p "(require('./.github/deps-request.json').devDependencies||[]).join(' ')")
+          [ -n "$deps" ] && npm install --save --ignore-scripts $deps
+          [ -n "$dev" ] && npm install --save-dev --ignore-scripts $dev
+          ls node_modules node_modules/@*/ 2>/dev/null | sort > /tmp/after.txt
+      - name: Pack the new folders
+        run: |
+          node -e '
+            const fs=require("fs"),path=require("path");
+            const lock=require("./package-lock.json").packages;
+            const req=require("./.github/deps-request.json");
+            const names=[...(req.dependencies||[]),...(req.devDependencies||[])].map(s=>s.replace(/@[^@/]+$/,"").replace(/^(@[^/]+\/[^@]+)@.*$/,"$1"));
+            // the requested packages plus everything they depend on, from the lockfile
+            const want=new Set(); const visit=(n)=>{const k="node_modules/"+n; if(want.has(k)||!lock[k])return; want.add(k); for(const d of Object.keys({...lock[k].dependencies,...lock[k].optionalDependencies,...lock[k].peerDependencies})) visit(d);};
+            names.forEach(visit);
+            fs.writeFileSync("/tmp/dirs.txt",[...want].filter(d=>fs.existsSync(d)).join("\n")+"\n");'
+          cat /tmp/dirs.txt
+          tar czf /tmp/deps.tgz -T /tmp/dirs.txt
+          ls -la /tmp/deps.tgz
+      - name: Commit package.json and the lockfile to dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Add packages: $(node -p "[...(require('./.github/deps-request.json').dependencies||[]),...(require('./.github/deps-request.json').devDependencies||[])].join(', ')")" || echo "nothing to commit"
+          git pull --rebase origin dev
+          git push origin HEAD:dev
+      - name: Put the package folders on ci-deps
+        run: |
+          mkdir /tmp/cache && cd /tmp/cache && git init -q && git checkout -q -b ci-deps
+          cp /tmp/deps.tgz /tmp/dirs.txt .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add . 
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "node_modules folders for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-deps

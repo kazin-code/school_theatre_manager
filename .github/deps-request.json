@@ -1,0 +1,4 @@
+{
+  "dependencies": ["hono@^4", "@hono/node-server@^1", "@hono/zod-validator@^0", "postgres@3.4.9"],
+  "devDependencies": []
+}
