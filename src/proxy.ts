@@ -12,5 +12,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|setup|change-password|api/ping|api/branding|_next/|fonts/|stage-logo\\.png|favicon).*)"],
+  matcher: ["/((?!login|setup|change-password|api/ping|api/server-info|api/branding|_next/|fonts/|stage-logo\\.png|favicon).*)"],
 };
