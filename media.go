@@ -34,12 +34,16 @@ func showFileDir() string { return filepath.Join(dataDir, "showfiles") }
 func migrate() {
 	addColumn("shows", "cover", "TEXT")
 	addColumn("show_people", "voice_part", "TEXT")
+	// authors and rights, printed in the program only when filled in
+	for _, c := range []string{"written_by", "book_by", "music_by", "lyrics_by", "based_on", "additional_credits", "licensor", "licensing_notice"} {
+		addColumn("shows", c, "TEXT")
+	}
 	// carry single photos from version 1.0 into the gallery
 	db.Exec(`INSERT INTO item_photos(item_id,file,sort,created_at,created_by)
 		SELECT id, photo, 0, COALESCE(updated_at, created_at), updated_by FROM items
 		WHERE photo IS NOT NULL AND id NOT IN (SELECT item_id FROM item_photos)`)
 	migratePrograms()
-	for _, list := range []string{"team_position", "crew_position", "material_type", "voice_part", "instrument"} {
+	for _, list := range []string{"team_position", "crew_position", "material_type", "voice_part", "instrument", "licensor"} {
 		vals := defaultLookups[list]
 		var n int
 		db.QueryRow("SELECT COUNT(*) FROM lookups WHERE list=?", list).Scan(&n)

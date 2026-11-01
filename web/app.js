@@ -1150,6 +1150,21 @@ function deleteShowModal(s, counts) {
   inp.addEventListener("input", check); check();
 }
 
+// Author credits for a show, combining roles held by the same person ("Music & Lyrics by …").
+function creditLines(s) {
+  const t = (v) => (v || "").trim().replace(/^(written\s+)?by\s+/i, "");
+  const same = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
+  const out = [], wr = t(s.written_by), bk = t(s.book_by), mu = t(s.music_by), ly = t(s.lyrics_by);
+  if (wr) out.push(["Written by", wr]);
+  if (bk && same(bk, mu) && same(bk, ly)) out.push(["Book, Music & Lyrics by", bk]);
+  else if (same(mu, ly)) { if (bk) out.push(["Book by", bk]); out.push(["Music & Lyrics by", mu]); }
+  else if (same(bk, ly)) { out.push(["Book & Lyrics by", bk]); if (mu) out.push(["Music by", mu]); }
+  else if (same(bk, mu)) { out.push(["Book & Music by", bk]); if (ly) out.push(["Lyrics by", ly]); }
+  else { if (bk) out.push(["Book by", bk]); if (mu) out.push(["Music by", mu]); if (ly) out.push(["Lyrics by", ly]); }
+  const based = (s.based_on || "").trim().replace(/^based\s+on\s+/i, "");
+  if (based) out.push(["Based on", based]);
+  return out;
+}
 const showFileURL = (f, dl) => "/files/show/" + encodeURIComponent(f) + (dl ? "?download=1" : "");
 
 // ---- reading pasted or uploaded cast & crew lists ----
@@ -1257,6 +1272,18 @@ async function viewShowForm(id, past) {
         ${fld("Status", sel("status", [["planning", "Planning"], ["in production", "In production"], ["closed", "Past show"]], s.status))}
         ${fld("Notes", area("notes", s, 3), "full")}
       </div></fieldset>
+      <fieldset><legend>Authors &amp; rights</legend>
+        <p class="hint" style="margin:-6px 0 10px">Copy these from your license agreement or the script's title page. The program prints only the lines you fill in.</p>
+        <div class="grid">
+          <div class="playonly wide">${fld("Written by", inp("written_by", s, 'placeholder="e.g. Thornton Wilder"'), "", "The playwright.")}</div>
+          <div class="musonly">${fld("Book by", inp("book_by", s, 'placeholder="e.g. Howard Ashman"'))}</div>
+          <div class="musonly">${fld("Music by", inp("music_by", s, 'placeholder="e.g. Alan Menken"'))}</div>
+          <div class="musonly">${fld("Lyrics by", inp("lyrics_by", s, 'placeholder="e.g. Howard Ashman"'), "", "Same person as another credit? Type the name again and the program combines them.")}</div>
+          ${fld("Based on", inp("based_on", s, 'placeholder="e.g. the film by Roger Corman, screenplay by Charles Griffith"'), "full")}
+          ${fld("Other required credits", area("additional_credits", s, 2), "full", "Anything else the license asks you to print, one line each, e.g. “Orchestrations by …” or “Originally produced by …”.")}
+          ${fld("Licensed through", h`<input type="text" id="f-licensor" name="licensor" list="dl-licensor" value="${val(s, "licensor")}" placeholder="e.g. Music Theatre International (MTI)">`, "wide")}
+          ${fld("Licensing notice (exact wording)", area("licensing_notice", s, 3), "full", "If your licensor supplies required wording, paste it here. Left blank, the program prints the standard “presented through special arrangement with …” line when a licensor is filled in.")}
+        </div></fieldset>
       ${id ? h`<p class="note">Production team, cast, crew, materials and photos are managed on the <a href="#/show/${id}">show's page</a>.</p>` : h`
       <fieldset><legend>Cover image</legend><p class="hint" style="margin:-6px 0 10px">The show's title artwork, logo or poster, often supplied by the licensing company. It appears on the show's page and in the show lists.</p>
         <div class="coverpick"><div class="coverbox" id="newcover">${icon("mask")}<span class="small muted">No cover yet</span></div><div id="coverdrop" style="flex:1;min-width:220px"></div></div></fieldset>
@@ -1274,7 +1301,9 @@ async function viewShowForm(id, past) {
     </form>`);
   const f = $("#showf");
   let getTeam, getCast, getCrew, getPit, getNums, coverFile = null; const mats = [], pics = [];
-  const musical = (t) => $$(".musonly", f).forEach((el) => (el.hidden = !isMusical(t)));
+  // musicals have book, music and lyrics; plays have a playwright. Anything already filled in stays visible.
+  const filled = (el) => $$("input,textarea", el).some((x) => x.value.trim());
+  const musical = (t) => { const m = isMusical(t); $$(".musonly", f).forEach((el) => (el.hidden = !m && !filled(el))); $$(".playonly", f).forEach((el) => (el.hidden = m && !filled(el))); };
   bindTypePicker(f, musical); musical(s.type || "Play");
   if (!id) {
     getTeam = teamForm($("#teambox"), (S.lists.team_position || []).slice(0, 8).map((role) => ({ role, name: "" })));
@@ -1365,6 +1394,7 @@ async function viewShow(id, tab) {
       <div class="avail" style="margin:0;flex:1">${showPill(s.status)}
         <span class="small">${s.director ? "Directed by " + s.director : ""}${s.open_date ? ` · ${fmtDate(s.open_date)}${s.close_date ? " – " + fmtDate(s.close_date) : ""}` : ""}${s.venue ? " · " + s.venue : ""}</span>
         <span class="small muted" style="margin-left:auto">${mus && d.numbers.length ? `${d.numbers.length} musical numbers · ` : ""}${cast.length} in the cast · ${people.length - cast.length} on the team${mus ? ", pit" : ""} &amp; crew · ${pieces} piece${pieces === 1 ? "" : "s"} used${outLines.length ? ` · ${outLines.reduce((a, l) => a + l.qty, 0)} still out` : ""}</span></div></div>
+    ${creditLines(s).length ? h`<p class="small credline">${creditLines(s).map(([k, v], i) => h`${i ? " · " : ""}${k} <b>${v}</b>`)}${s.licensor ? h` · <span class="muted">Licensed through ${s.licensor}</span>` : ""}</p>` : ""}
     ${s.notes ? h`<p class="small" style="max-width:70ch">${s.notes}</p>` : ""}
     <datalist id="dl-characters">${chars.map((c) => h`<option value="${c}">`)}</datalist>
     <datalist id="dl-actors">${cast.map((p) => h`<option value="${p.name}">`)}</datalist>
@@ -1613,7 +1643,7 @@ async function viewSettings() {
   const sys = await GET("/api/system");
   const dir = isDirector();
   const [users, backups, cloud] = dir ? await Promise.all([GET("/api/users"), GET("/api/backups"), GET("/api/cloud")]) : [[], null, null];
-  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"], ["team_position", "Production team positions"], ["crew_position", "Crew positions"], ["instrument", "Pit instruments"], ["voice_part", "Voice parts"], ["material_type", "Show material types"], ["sponsor_tier", "Sponsor tiers"], ["ad_size", "Program ad sizes"]];
+  const LISTS = [["category", "Categories"], ["subcategory", "Item types"], ["era", "Eras / periods"], ["gender", "Genders"], ["size", "Sizes"], ["material", "Materials"], ["color", "Colors"], ["location", "Storage locations"], ["show_type", "Show types"], ["season", "Seasons"], ["team_position", "Production team positions"], ["crew_position", "Crew positions"], ["instrument", "Pit instruments"], ["voice_part", "Voice parts"], ["material_type", "Show material types"], ["sponsor_tier", "Sponsor tiers"], ["ad_size", "Program ad sizes"], ["licensor", "Licensing companies"]];
   shell("settings", h`
     ${page("Settings", dir ? "Settings" : "My account")}
     <div class="stack">

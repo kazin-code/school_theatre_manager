@@ -533,3 +533,13 @@ button.coverbox:not(.has):hover { border-color: var(--red); color: var(--red-ink
 }
 @media (max-width: 1180px) { .pedit { grid-template-columns: minmax(0, 1fr) 280px; } .prail { display: none; } }
 @media (max-width: 860px) { .pedit { grid-template-columns: minmax(0, 1fr); } .ppanel { position: static; max-height: none; } .sponsorform { grid-template-columns: 1fr; } }
+
+/* author credits (v2.3) */
+.pb-cred { margin: .02in 0 .1in; }
+.pb-cred .cr-l { margin-bottom: .03in; }
+.pb-cred .cr-k { font-style: italic; color: var(--p-muted); }
+.pb-cred .cr-v { font-weight: 600; }
+.pb-cred .cr-x { color: var(--p-muted); font-size: .9em; margin-top: .02in; }
+.pb-lic { color: var(--p-muted); margin: .04in 0 .06in; }
+.credline { margin: -6px 0 12px; color: var(--ink-2); }
+.credline b { font-weight: 600; }

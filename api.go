@@ -1182,7 +1182,8 @@ func apiDeleteRental(w http.ResponseWriter, r *http.Request) {
 
 // ---------- shows ----------
 
-var showFields = []string{"title", "type", "season", "year", "director", "venue", "open_date", "close_date", "status", "notes"}
+var showFields = []string{"title", "type", "season", "year", "director", "venue", "open_date", "close_date", "status", "notes",
+	"written_by", "book_by", "music_by", "lyrics_by", "based_on", "additional_credits", "licensor", "licensing_notice"}
 
 func apiShows(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

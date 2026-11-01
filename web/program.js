@@ -56,10 +56,11 @@ const B = {
   people: (kind, o = {}) => ({ id: puid(), type: "people", kind, cols: 1, style: "leaders", order: "role", voice: false, grade: false, size: 2, ...o }),
   songs: (o = {}) => ({ id: puid(), type: "songs", singers: true, size: 2, ...o }),
   sponsors: (o = {}) => ({ id: puid(), type: "sponsors", tiers: [], layout: "tiers", names: true, messages: true, scale: 2, ...o }),
+  credits: (part, o = {}) => ({ id: puid(), type: "credits", part, size: part === "license" ? 1 : 2, align: "center", ...o }),
   divider: (o = {}) => ({ id: puid(), type: "divider", style: "ornament", ...o }),
   spacer: (o = {}) => ({ id: puid(), type: "spacer", size: 2, ...o }),
 };
-const BLOCK_LABEL = { heading: "Heading", text: "Text", image: "Picture", info: "Show details", people: "People list", songs: "Musical numbers", sponsors: "Sponsors", divider: "Divider", spacer: "Space" };
+const BLOCK_LABEL = { credits: "Credits", heading: "Heading", text: "Text", image: "Picture", info: "Show details", people: "People list", songs: "Musical numbers", sponsors: "Sponsors", divider: "Divider", spacer: "Space" };
 const PEOPLE_LABEL = { cast: "Cast", team: "Production team", crew: "Crew", pit: "Pit orchestra" };
 
 // Ready-made pages, filled in from the show.
@@ -85,12 +86,11 @@ function pageTemplate(kind, ctx) {
       B.spacer({ size: 3 }),
       B.text(`<i>${esc(br.school || BN())} presents</i>`, { align: "center", size: 3, color: "muted" }),
       B.heading(title, { size: 4 }),
-      B.text("Book by ____________ · Music by ____________ · Lyrics by ____________", { align: "center", size: 2 }),
-      B.text("Based on ____________", { align: "center", size: 1, color: "muted" }),
+      B.credits("authors"),
       B.divider(),
       B.info({ director: true }),
       B.spacer({ size: 4 }),
-      B.text(`<i>${esc(title)}</i> is presented through special arrangement with [licensing company, e.g. Music Theatre International (MTI), Concord Theatricals, Broadway Licensing, Dramatists Play Service]. All authorized performance materials are also supplied by [licensing company].`, { align: "center", size: 1, color: "muted" }),
+      B.credits("license"),
     ]);
     case "note": return pg("Director's note", [
       B.heading("From the Director", { size: 3 }),
@@ -178,6 +178,17 @@ function drawBlock(b, ctx, editing) {
       return h`<div class="pb-songs" style="${fs}">${acts.map(([a, ns]) => h`${a ? h`<div class="ps-act">${actName(a)}</div>` : ""}${ns.map((n) => h`<div class="pp"><span class="pp-r">${n.number ? n.number + ". " : ""}${n.title}</span>${b.singers && n.singers ? h`<span class="pp-d"></span><span class="pp-n ps-s">${n.singers}</span>` : ""}</div>`)}`)}</div>`;
     }
     case "sponsors": return drawSponsors(b, ctx, editing);
+    case "credits": {
+      const s = ctx.show, fs = `font-size:${TSIZES[(b.size || 2) - 1]}pt`, lines = (t) => (t || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+      if (b.part === "license") {
+        const notice = lines(s.licensing_notice), lic = (s.licensor || "").trim();
+        if (!notice.length && !lic) return editing ? h`<div class="pb-hint" style="${fs}">Licensing notice: fill in <b>Licensed through</b> (or paste the exact wording) in Edit show → Authors &amp; rights. Nothing prints until you do.</div>` : "";
+        return h`<div class="pb-lic" style="${al};${fs}">${notice.length ? notice.map((l, i) => h`${i ? raw("<br>") : ""}${l}`) : h`<i>${s.title}</i> is presented through special arrangement with ${lic}. All authorized performance materials are also supplied by ${lic}.`}</div>`;
+      }
+      const cr = creditLines(s), extra = lines(s.additional_credits);
+      if (!cr.length && !extra.length) return editing ? h`<div class="pb-hint" style="${fs}">Author credits: fill in who wrote the show in Edit show → Authors &amp; rights. Only the lines you fill in will print.</div>` : "";
+      return h`<div class="pb-cred" style="${al};${fs}">${cr.map(([k, v]) => h`<div class="cr-l"><span class="cr-k">${k}</span> <span class="cr-v">${v}</span></div>`)}${extra.map((l) => h`<div class="cr-x">${l}</div>`)}</div>`;
+    }
     case "divider": return h`<div class="pb-div ${b.style || "ornament"}">${b.style === "ornament" ? raw("<span>✦ &nbsp; ✦ &nbsp; ✦</span>") : ""}</div>`;
     case "spacer": return h`<div class="pb-sp" style="height:${(b.size || 2) * 0.12}in">${editing ? raw('<span class="pb-sp-l">space</span>') : ""}</div>`;
   }
@@ -216,11 +227,29 @@ function drawPage(pg, i, doc, ctx, editing) {
     ${folio ? h`<div class="pfolio">${i + 1}</div>` : ""}</section>`;
 }
 
+// Programs started before version 2.3 had fill-in-the-blank author and licensing lines.
+// Swap any still unedited for credit blocks that read the show's Authors & rights.
+function upgradeProgram(doc) {
+  let changed = false;
+  doc.pages.forEach((pg) => {
+    let placed = false;
+    pg.blocks = pg.blocks.flatMap((b) => {
+      if (b.type !== "text") return [b];
+      const t = (b.html || "").replace(/<[^>]+>/g, "");
+      if (/_{4,}/.test(t) && /(book|music|lyrics|written|based on)/i.test(t)) { changed = true; if (placed) return []; placed = true; return [B.credits("authors", { align: b.align || "center" })]; }
+      if (/\[licensing company/i.test(t)) { changed = true; return [B.credits("license", { align: b.align || "center" })]; }
+      return [b];
+    });
+  });
+  return changed;
+}
+
 // ---------- editor ----------
 async function viewProgram(id) {
   const d = await GET(`/api/shows/${id}/program`);
   P.showId = id; P.ctx = d; P.undo = []; P.redo = []; P.sel = null; P.cur = 0; P.status = d.meta ? "Saved" : "";
   P.doc = d.doc && d.doc.pages ? d.doc : defaultProgram(d);
+  const upgraded = upgradeProgram(P.doc);
   const s = d.show;
   shell(s.status === "closed" ? "past-shows" : "shows", h`
     <div class="crumb no-print"><a href="#/${s.status === "closed" ? "past-shows" : "shows"}">${s.status === "closed" ? "Past shows" : "Current shows"}</a> / <a href="#/show/${id}">${s.title}</a></div>
@@ -239,7 +268,7 @@ async function viewProgram(id) {
   $("#pprint").onclick = () => printProgram("single");
   $("#pbook").onclick = () => printProgram("booklet");
   $("#pmore").onclick = moreMenu;
-  if (!d.doc) save(true);
+  if (!d.doc || upgraded) save(true);
   drawAll(); drawPanel(); setStatus(P.status);
 }
 
@@ -403,14 +432,14 @@ const setB = (k, v) => change(() => { const b = selBlock(); if (b) b[k] = v; });
 
 function panelAdd(box) {
   const items = [["heading", "Heading", "Big title text"], ["text", "Text", "Paragraphs, notes, thanks"], ["image", "Picture", "Photo, artwork or ad"], ["cover", "Show cover", "The show's cover image"], ["logo", "School logo", "Your logo"], ["info", "Show details", "Dates, venue, director"],
-    ["cast", "Cast list", "Character … actor"], ["team", "Production team", "Director, TD, MD…"], ["crew", "Crew list", "Positions and names"], ["pit", "Pit orchestra", "Instruments and players"], ["songs", "Musical numbers", "Song list by act"], ["sponsors", "Sponsors", "Logos, ads and names"],
+    ["cast", "Cast list", "Character … actor"], ["team", "Production team", "Director, TD, MD…"], ["crew", "Crew list", "Positions and names"], ["pit", "Pit orchestra", "Instruments and players"], ["songs", "Musical numbers", "Song list by act"], ["credits", "Author credits", "Book, music, lyrics, based on"], ["license", "Licensing notice", "Required rights wording"], ["sponsors", "Sponsors", "Logos, ads and names"],
     ["divider", "Divider", "Line or ornament"], ["spacer", "Space", "Breathing room"]];
   box.innerHTML = h`<p class="small muted" style="margin:0 0 8px">Adds ${P.sel ? "below the selected block" : `to the end of page ${P.cur + 1}`}.</p>
     <div class="addgrid">${items.map(([k, t, d]) => h`<button type="button" data-add="${k}"><b>${t}</b><span>${d}</span></button>`)}</div>`.s;
   $$("[data-add]", box).forEach((b) => (b.onclick = () => {
     const k = b.dataset.add;
     const nb = { heading: () => B.heading("New heading"), text: () => B.text("Click to type…", { size: 3 }), image: () => B.image(), cover: () => B.image({ src: "cover" }), logo: () => B.image({ src: "logo", width: 25, maxh: 1.2 }), info: () => B.info(),
-      cast: () => B.people("cast"), team: () => B.people("team"), crew: () => B.people("crew"), pit: () => B.people("pit"), songs: () => B.songs(), sponsors: () => B.sponsors(), divider: () => B.divider(), spacer: () => B.spacer() }[k]();
+      cast: () => B.people("cast"), team: () => B.people("team"), crew: () => B.people("crew"), pit: () => B.people("pit"), songs: () => B.songs(), credits: () => B.credits("authors"), license: () => B.credits("license"), sponsors: () => B.sponsors(), divider: () => B.divider(), spacer: () => B.spacer() }[k]();
     insertBlock(nb);
     if (k === "image") { P.panel = "images"; drawPanel(); }
   }));
@@ -447,11 +476,13 @@ function panelEdit(box) {
       ${b.layout !== "names" ? h`${fld("Also show", h`<label class="check"><input type="checkbox" id="pe-names" ${b.names ? raw("checked") : ""}> Names under logos</label><label class="check"><input type="checkbox" id="pe-msg" ${b.messages ? raw("checked") : ""}> Messages</label>`)}${fld("Logo size", seg("scale", [[1, "S"], [2, "M"], [3, "L"], [4, "XL"]], b.scale))}` : ""}
       <p class="small muted">${P.ctx.sponsors.length} active sponsor${P.ctx.sponsors.length === 1 ? "" : "s"}. Manage them on the Sponsors tab or the <a href="#/sponsors">Sponsors page</a>.</p>`;
   }
+  if (b.type === "credits") body = h`${fld("Show", seg("part", [["authors", "Author credits"], ["license", "Licensing notice"]], b.part))}${fld("Size", sizeSeg())}${fld("Line up", alignSeg())}
+      <p class="small muted">Taken from the show's Authors &amp; rights. Only filled-in lines print. <a href="#/show/${P.showId}/edit">Edit authors &amp; rights</a></p>`;
   if (b.type === "divider") body = fld("Style", seg("style", [["ornament", "✦ ✦ ✦"], ["line", "Line"], ["double", "Double"], ["dots", "Dots"]], b.style));
   if (b.type === "spacer") body = fld("Height", seg("size", [[1, "XS"], [2, "S"], [3, "M"], [4, "L"], [6, "XL"]], b.size));
-  box.innerHTML = h`<div class="pedit-h"><b>${BLOCK_LABEL[b.type]}</b>${b.type === "people" ? h` · ${PEOPLE_LABEL[b.kind]}` : ""}<span class="small muted"> on page ${P.sel.pi + 1}</span></div><div class="pfields">${body}</div>
+  box.innerHTML = h`<div class="pedit-h"><b>${BLOCK_LABEL[b.type]}</b>${b.type === "people" ? h` · ${PEOPLE_LABEL[b.kind]}` : b.type === "credits" ? h` · ${b.part === "license" ? "Licensing notice" : "Authors"}` : ""}<span class="small muted"> on page ${P.sel.pi + 1}</span></div><div class="pfields">${body}</div>
     <div class="pact" style="margin-top:12px"><button type="button" class="btn sm" id="pe-dup">Duplicate</button><button type="button" class="btn sm ghost danger" id="pe-del">Delete block</button></div>`.s;
-  for (const k of ["size", "align", "color", "font", "kind", "style", "order", "layout"]) bindSeg(box, k, (v) => setB(k, k === "size" ? +v : v));
+  for (const k of ["size", "align", "color", "font", "kind", "style", "order", "layout", "part"]) bindSeg(box, k, (v) => setB(k, k === "size" ? +v : v));
   bindSeg(box, "cols", (v) => setB("cols", +v)); bindSeg(box, "scale", (v) => setB("scale", +v));
   $$("[data-cmd]", box).forEach((x) => x.addEventListener("mousedown", (e) => { e.preventDefault(); document.execCommand(x.dataset.cmd); const el = $(`.pblock[data-pi="${P.sel.pi}"][data-bi="${P.sel.bi}"] [data-edit]`); if (el) el.dispatchEvent(new Event("input")); }));
   const chk = (id, k) => { const el = $("#" + id, box); if (el) el.onchange = () => setB(k, el.checked); };
