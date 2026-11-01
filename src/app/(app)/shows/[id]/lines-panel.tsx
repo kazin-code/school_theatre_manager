@@ -38,7 +38,7 @@ export function LinesPanel({ showId, title, past, lines }: { showId: number; tit
     toast.success(`Returned ${ret!.length} line${ret!.length === 1 ? "" : "s"}.`); setRet(null); setSel(new Set()); router.refresh();
   });
 
-  if (!lines.length) return <Empty>Nothing checked out to {title} yet. {!past && <><Link href={`/shows/${showId}/checkout`} className="font-medium text-primary underline">Check out costumes, props and set pieces</Link>, or build a pull list while browsing the inventory.</>}</Empty>;
+  if (!lines.length) return <Empty>Nothing checked out to {title} yet. {!past && <><Link href={`/shows/${showId}/checkout`} className="font-medium text-link underline">Check out costumes, props and set pieces</Link>, or build a pull list while browsing the inventory.</>}</Empty>;
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">

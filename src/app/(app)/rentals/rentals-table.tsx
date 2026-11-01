@@ -19,7 +19,7 @@ export function RentalsTable({ rows }: { rows: RentalRow[] }) {
   const [filters, setFilters] = useState<ColumnFiltersState>([{ id: "state", value: "open" }]);
   const counts = useMemo(() => ({ open: rows.filter((r) => r.status === "out").length, overdue: rows.filter((r) => state(r, today) === "overdue").length, returned: rows.filter((r) => r.status === "returned").length, all: rows.length }), [rows, today]);
   const columns = useMemo<Col<RentalRow>[]>(() => [
-    { accessorKey: "id", header: "#", cell: ({ row }) => <span className="font-medium text-primary">#{row.original.id}</span> },
+    { accessorKey: "id", header: "#", cell: ({ row }) => <span className="font-medium text-link">#{row.original.id}</span> },
     { accessorKey: "renterName", header: "Renter", cell: ({ row }) => <div><div className="font-medium">{row.original.renterName}</div><div className="text-xs text-muted-foreground">{row.original.purpose ?? row.original.organization}</div></div> },
     { accessorKey: "summary", header: "Items", enableSorting: false, cell: ({ row }) => <div className="max-w-sm text-sm whitespace-normal"><span className="tabular">{row.original.pieces} pc</span> · <span className="line-clamp-1 inline text-muted-foreground">{row.original.summary}</span></div> },
     { accessorKey: "dateOut", header: "Out", cell: ({ row }) => fmtDate(row.original.dateOut) },

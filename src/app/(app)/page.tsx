@@ -57,7 +57,7 @@ async function Dashboard() {
                 {r.status === "repair" ? <Pill tone="amber">In repair</Pill> : <Condition value={r.condition} />}
               </li>))}</ul>)}
         </CardContent></Card>
-        <Card><CardHeader><CardTitle>Recent activity</CardTitle><CardAction><Link href="/activity" className="text-sm text-primary hover:underline">See all</Link></CardAction></CardHeader><CardContent>
+        <Card><CardHeader><CardTitle>Recent activity</CardTitle><CardAction><Link href="/activity" className="text-sm text-link hover:underline">See all</Link></CardAction></CardHeader><CardContent>
           {!recent.length ? <Empty>No activity yet.</Empty> : (
             <ul className="grid gap-2 text-sm">{recent.map((a) => (
               <li key={a.id}><span>{a.details}</span><div className="text-xs text-muted-foreground">{fmtWhen(a.at)}{a.user ? ` · ${a.user}` : ""}</div></li>))}</ul>)}

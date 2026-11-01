@@ -11,7 +11,7 @@ export function PageHeader({ eyebrow, title, actions, crumbs, children }: { eyeb
       )}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0">
-          {eyebrow && <div className="text-xs font-semibold tracking-widest text-primary uppercase">{eyebrow}</div>}
+          {eyebrow && <div className="text-xs font-semibold tracking-widest text-link uppercase">{eyebrow}</div>}
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
         </div>
         {actions && <div className="no-print ml-auto flex flex-wrap gap-2">{actions}</div>}

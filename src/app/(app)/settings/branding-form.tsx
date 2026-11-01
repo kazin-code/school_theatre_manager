@@ -61,9 +61,9 @@ export function BrandingForm({ brand }: { brand: BrandInfo }) {
             <div className="sm:col-span-2">
               <FieldLabel>Accent color</FieldLabel>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input type="color" aria-label="Accent color" value={accent || "#c21d2b"} onChange={(e) => form.setValue("accent", e.target.value, { shouldDirty: true })} className="h-8 w-11 cursor-pointer rounded-md border bg-background p-0.5" />
+                <input type="color" aria-label="Accent color" value={accent || "#dca12d"} onChange={(e) => form.setValue("accent", e.target.value, { shouldDirty: true })} className="h-8 w-11 cursor-pointer rounded-md border bg-background p-0.5" />
                 {SWATCHES.map((c) => <button key={c} type="button" aria-label={`Use ${c}`} onClick={() => form.setValue("accent", c, { shouldDirty: true })} className="size-6 rounded-full ring-1 ring-border ring-offset-2 ring-offset-background" style={{ background: c }} />)}
-                <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("accent", "", { shouldDirty: true })}>Default red</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("accent", "", { shouldDirty: true })}>Theme gold</Button>
               </div>
               <FieldDescription className="mt-1">Use your school colors. Saved changes recolor buttons and highlights.</FieldDescription>
             </div>

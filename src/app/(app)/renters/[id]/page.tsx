@@ -33,7 +33,7 @@ async function Content({ params }: { params: PageProps<"/renters/[id]">["params"
       <div className="grid items-start gap-5 lg:grid-cols-[320px_1fr]">
         <Card><CardHeader><CardTitle>Contact</CardTitle></CardHeader><CardContent className="grid gap-1 text-sm">
           {r.organization && <div>{r.organization}</div>}{r.contactName && <div>{r.contactName}</div>}
-          {r.email && <a href={`mailto:${r.email}`} className="text-primary hover:underline">{r.email}</a>}{r.phone && <div>{r.phone}</div>}
+          {r.email && <a href={`mailto:${r.email}`} className="text-link hover:underline">{r.email}</a>}{r.phone && <div>{r.phone}</div>}
           {r.address && <div className="whitespace-pre-wrap text-muted-foreground">{r.address}</div>}
           {r.notes && <p className="mt-2 rounded-lg bg-muted p-3 whitespace-pre-wrap">{r.notes}</p>}
           <div className="mt-3 grid grid-cols-2 gap-2 text-center">
@@ -46,7 +46,7 @@ async function Content({ params }: { params: PageProps<"/renters/[id]">["params"
             <Table><TableHeader><TableRow><TableHead>#</TableHead><TableHead>Items</TableHead><TableHead>Out</TableHead><TableHead>Back</TableHead><TableHead>Rating</TableHead></TableRow></TableHeader>
               <TableBody>{d.history.map((h) => (
                 <TableRow key={h.id}>
-                  <TableCell><Link href={`/rentals/${h.id}`} className="font-medium text-primary hover:underline">#{h.id}</Link></TableCell>
+                  <TableCell><Link href={`/rentals/${h.id}`} className="font-medium text-link hover:underline">#{h.id}</Link></TableCell>
                   <TableCell className="max-w-md whitespace-normal">{h.purpose && <div className="font-medium">{h.purpose}</div>}<div className="line-clamp-2 text-xs text-muted-foreground">{h.pieces} piece{h.pieces === 1 ? "" : "s"}: {h.summary}</div></TableCell>
                   <TableCell>{fmtDate(h.dateOut)}</TableCell>
                   <TableCell>{h.dateReturned ? fmtDate(h.dateReturned) : <Pill tone="amber">Out</Pill>}</TableCell>

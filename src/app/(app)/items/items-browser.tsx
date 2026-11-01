@@ -156,7 +156,7 @@ export function ItemsBrowser({ items, shows, lists }: { items: ItemRow[]; shows:
               </ToggleGroup>
             </div>
           </div>
-          {!items.length ? <Empty>Your inventory is empty. <Link href="/items/new" className="font-medium text-primary underline">Add the first item</Link>: a costume, a chair, a prop.</Empty>
+          {!items.length ? <Empty>Your inventory is empty. <Link href="/items/new" className="font-medium text-link underline">Add the first item</Link>: a costume, a chair, a prop.</Empty>
             : view === "list" ? <DataTable table={table} onRowClick={(r) => router.push(`/items/${r.id}`)} empty="Nothing matches. Try fewer filters or a different word." />
             : rows.length === 0 ? <Empty>Nothing matches. Try fewer filters or a different word.</Empty>
             : (

@@ -33,7 +33,7 @@ async function Content({ params }: { params: PageProps<"/rentals/[id]">["params"
           {r.status === "returned" ? <Pill>Returned {fmtDate(r.dateReturned)}</Pill> : overdue ? <Pill tone="red">Overdue</Pill> : <Pill tone="amber">Out</Pill>}
           {r.purpose && <span>{r.purpose}</span>}
           <span>Out {fmtDate(r.dateOut)}{r.dateDue ? ` · due ${fmtDate(r.dateDue)}` : ""}</span>
-          <Link href={`/renters/${p.id}`} className="text-primary hover:underline">Renter history</Link>
+          <Link href={`/renters/${p.id}`} className="text-link hover:underline">Renter history</Link>
         </div>
       </PageHeader>
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_320px]">

@@ -69,7 +69,7 @@ async function Content({ params, searchParams }: Pick<PageProps<"/shows/[id]">, 
                   <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
                     {credits.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd>{v}</dd></Fragment>)}
                     {s.licensor && <><dt className="text-muted-foreground">Licensed by</dt><dd>{s.licensor}</dd></>}
-                  </dl>) : <p className="text-muted-foreground">Not filled in yet. <Link href={`/shows/${s.id}/edit`} className="text-primary underline">Add the authors</Link> so they print in the program.</p>}
+                  </dl>) : <p className="text-muted-foreground">Not filled in yet. <Link href={`/shows/${s.id}/edit`} className="text-link underline">Add the authors</Link> so they print in the program.</p>}
                 {s.additionalCredits && <p className="whitespace-pre-wrap">{s.additionalCredits}</p>}
                 {s.licensingNotice && <p className="rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">{s.licensingNotice}</p>}
               </CardContent></Card>

@@ -274,7 +274,7 @@ export function ProgramEditor({ showId, ctx, saved, pictures, others, allSponsor
                   {s.logo ? <img src={sponsorUrl(s.logo)} alt="" className="size-9 rounded border bg-white object-contain" /> : <span className="grid size-9 place-items-center rounded bg-muted text-sm font-semibold">{s.name.slice(0, 1)}</span>}
                   <span className="min-w-0"><span className="block truncate text-sm font-medium">{s.name}</span><span className="block truncate text-xs text-muted-foreground">{[s.tier, s.adSize, !s.active && "off"].filter(Boolean).join(" · ")}</span></span>
                 </button></li>))}</ul>
-              <Link href="/sponsors" className="text-sm text-primary hover:underline">All sponsors</Link>
+              <Link href="/sponsors" className="text-sm text-link hover:underline">All sponsors</Link>
             </div>)}
         </aside>
       </div>
@@ -379,9 +379,9 @@ function EditPanel({ b, pageNo, ctx, doc, pictures, tiers, showId, set, quiet, o
         <Seg label="Columns" value={b.cols} options={[[1, "1"], [2, "2"], [3, "3"]]} onChange={(v) => set({ cols: v })} />
         <div className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">Also show</span>{b.kind === "cast" && check("Voice part", "voice", b.voice)}{check("Grade", "grade", b.grade)}</div>
         <Seg label="Size" value={b.size} options={SIZES} onChange={(v) => set({ size: v })} />
-        <p className="text-[11px] text-muted-foreground">Names come from the show&apos;s Cast &amp; crew tab. People without a role are listed together at the end. <Link className="text-primary underline" href={`/shows/${showId}?tab=people`}>Edit the list</Link></p></>}
+        <p className="text-[11px] text-muted-foreground">Names come from the show&apos;s Cast &amp; crew tab. People without a role are listed together at the end. <Link className="text-link underline" href={`/shows/${showId}?tab=people`}>Edit the list</Link></p></>}
       {b.type === "songs" && <><div className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">Also show</span>{check("Who sings", "singers", b.singers)}</div><Seg label="Size" value={b.size} options={SIZES} onChange={(v) => set({ size: v })} />
-        <p className="text-[11px] text-muted-foreground">Songs come from the show&apos;s Musical numbers tab. <Link className="text-primary underline" href={`/shows/${showId}?tab=numbers`}>Edit the list</Link></p></>}
+        <p className="text-[11px] text-muted-foreground">Songs come from the show&apos;s Musical numbers tab. <Link className="text-link underline" href={`/shows/${showId}?tab=numbers`}>Edit the list</Link></p></>}
       {b.type === "sponsors" && <>
         <Seg label="Layout" value={b.layout} options={[["tiers", "Logos & ads"], ["names", "Names only"]]} onChange={(v) => set({ layout: v })} />
         <div className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">Which tiers</span>{tiers.map((t) => (
@@ -392,7 +392,7 @@ function EditPanel({ b, pageNo, ctx, doc, pictures, tiers, showId, set, quiet, o
         <p className="text-[11px] text-muted-foreground">{ctx.sponsors.length} active sponsor{ctx.sponsors.length === 1 ? "" : "s"}.</p></>}
       {b.type === "credits" && <><Seg label="Show" value={b.part} options={[["authors", "Author credits"], ["license", "Licensing notice"]]} onChange={(v) => set({ part: v })} />
         <Seg label="Size" value={b.size} options={SIZES} onChange={(v) => set({ size: v })} /><Seg label="Line up" value={b.align} options={ALIGN as [typeof b.align, string][]} onChange={(v) => set({ align: v })} />
-        <p className="text-[11px] text-muted-foreground">From the show&apos;s Authors &amp; rights. Only filled-in lines print. <Link className="text-primary underline" href={`/shows/${showId}/edit`}>Edit authors &amp; rights</Link></p></>}
+        <p className="text-[11px] text-muted-foreground">From the show&apos;s Authors &amp; rights. Only filled-in lines print. <Link className="text-link underline" href={`/shows/${showId}/edit`}>Edit authors &amp; rights</Link></p></>}
       {b.type === "divider" && <Seg label="Style" value={b.style} options={[["ornament", "✦ ✦ ✦"], ["line", "Line"], ["double", "Double"], ["dots", "Dots"]]} onChange={(v) => set({ style: v })} />}
       {b.type === "spacer" && <Seg label="Height" value={b.size} options={[[1, "XS"], [2, "S"], [3, "M"], [4, "L"], [6, "XL"]]} onChange={(v) => set({ size: v })} />}
       <div className="flex gap-2 border-t pt-3"><Button size="sm" variant="outline" onClick={onDup}><Copy />Duplicate</Button><Button size="sm" variant="ghost" className="text-destructive" onClick={onDel}><X />Delete block</Button></div>

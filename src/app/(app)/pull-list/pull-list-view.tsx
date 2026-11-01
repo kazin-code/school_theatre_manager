@@ -8,7 +8,7 @@ import { usePullList } from "@/lib/pull-list";
 
 export function PullListView() {
   const pull = usePullList();
-  if (!pull.items.length) return <Empty>Your pull list is empty. While browsing the <Link href="/items" className="font-medium text-primary underline">inventory</Link>, click <b>+ Pull</b> on anything you want to set aside, then check it all out to a show or a rental at once.</Empty>;
+  if (!pull.items.length) return <Empty>Your pull list is empty. While browsing the <Link href="/items" className="font-medium text-link underline">inventory</Link>, click <b>+ Pull</b> on anything you want to set aside, then check it all out to a show or a rental at once.</Empty>;
   const ids = pull.items.map((p) => p.id).join(",");
   return (
     <div className="grid max-w-3xl gap-4">
