@@ -7,12 +7,22 @@
  *                                                     director account come from STM_* variables
  *   node stm-tool.cjs reset-password --data <dir>   give a director a temporary password
  *   node stm-tool.cjs network on|off --data <dir>   let other computers on the network connect
+ *   node stm-tool.cjs server <address>|off --data <dir>   connect this computer to the school's server
+ *
+ * School server package (Windows Server):
+ *   node stm-tool.cjs check-db                      test the PostgreSQL settings (STM_DB_* variables)
+ *   node stm-tool.cjs configure --data <dir>        test them, save server.json, create the tables,
+ *                                                     and the first director (STM_ADMIN_*) if given
+ *   STM_DB_HOST, STM_DB_PORT (5432), STM_DB_NAME, STM_DB_USER, STM_DB_PASSWORD, STM_DB_SSL (require),
+ *   or STM_DATABASE_URL; STM_PORT (8417), STM_FILES_DIR (default: the data folder)
  */
 import path from "node:path";
 import fs from "node:fs";
 import readline from "node:readline/promises";
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
+import postgres from "postgres";
+import { APP_ID, DEFAULT_PORT } from "@stm/core/version";
 import { hashPassword } from "@stm/core/auth/hash";
 import { passwordProblem, USERNAME_RE } from "@stm/core/auth/password";
 import type { Branding } from "@stm/core/db/validation";
@@ -25,12 +35,12 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const data = opt("--data");
-if (!data) { console.error("Missing --data <folder>"); process.exit(2); }
-process.env.STM_DATA_DIR = data;
+if (!data && cmd !== "check-db") { console.error("Missing --data <folder>"); process.exit(2); }
+if (data) process.env.STM_DATA_DIR = data;
 // packaged: the migrations sit beside the tools folder
 if (!process.env.STM_MIGRATIONS && fs.existsSync(path.join(__dirname, "..", "drizzle", "sqlite"))) process.env.STM_MIGRATIONS = path.join(__dirname, "..", "drizzle");
 
-const configFile = path.join(data, "config.json");
+const configFile = path.join(data ?? ".", "config.json");
 type NetConfig = { port: number; network: boolean } & Record<string, unknown>;
 function readConfig(): NetConfig {
   try { return { port: 8417, network: false, ...JSON.parse(fs.readFileSync(configFile, "utf8")) }; } catch { return { port: 8417, network: false }; }
@@ -44,6 +54,49 @@ async function open() {
   return cfg;
 }
 
+// ---------- the school server's database ----------
+function dbSettings() {
+  const e = process.env;
+  if (e.STM_DATABASE_URL) return { url: e.STM_DATABASE_URL, ssl: e.STM_DATABASE_SSL === "require", label: e.STM_DATABASE_URL.replace(/\/\/[^@]*@/, "//…@") };
+  const host = e.STM_DB_HOST?.trim(), name = e.STM_DB_NAME?.trim(), user = e.STM_DB_USER?.trim();
+  if (!host || !name || !user) throw new Error("Fill in the database server, database name and username.");
+  const port = Number(e.STM_DB_PORT) || 5432;
+  if (port < 1 || port > 65535) throw new Error("The database port must be a number such as 5432.");
+  const enc = encodeURIComponent;
+  return { url: `postgres://${enc(user)}:${enc(e.STM_DB_PASSWORD ?? "")}@${host.includes(":") ? `[${host}]` : host}:${port}/${enc(name)}`, ssl: e.STM_DB_SSL === "require" || e.STM_DB_SSL === "1", label: `${user}@${host}:${port}/${name}` };
+}
+
+/** Plain words for what went wrong connecting to PostgreSQL. */
+function dbProblem(err: unknown, label: string): string {
+  const e = err as { code?: string; message?: string };
+  const m = e?.message ?? String(err);
+  switch (e?.code) {
+    case "ECONNREFUSED": return `Nothing answered at ${label}. Check the server name and port, and that PostgreSQL is running and listens on the network (listen_addresses in postgresql.conf).`;
+    case "ENOTFOUND": case "EAI_AGAIN": return `The database server name in ${label} wasn't found on the network. Check the spelling, or use its IP address.`;
+    case "ETIMEDOUT": case "CONNECT_TIMEOUT": return `The database server at ${label} didn't answer in time. A firewall may be blocking port 5432 from this computer.`;
+    case "28P01": return "The database didn't accept that username and password.";
+    case "28000": return `PostgreSQL refused this computer (${m}). Add a line for this server's address to pg_hba.conf, then reload PostgreSQL.`;
+    case "3D000": return `There's no database with that name on the server. Create it first: CREATE DATABASE … OWNER …; (see the setup guide).`;
+    case "42501": return `The account can sign in but isn't allowed to create tables in that database (${m}). Make it the database's owner.`;
+  }
+  if (/ssl|tls|certificate/i.test(m)) return `The encrypted connection failed (${m}). Untick "Require an encrypted connection" if the database server doesn't use TLS.`;
+  return `Couldn't connect to the database: ${m}`;
+}
+
+async function checkDb(): Promise<{ url: string; ssl: boolean; label: string }> {
+  const d = dbSettings();
+  const sql = postgres(d.url, { ssl: d.ssl ? "require" : undefined, connect_timeout: 10, max: 1, onnotice: () => {} });
+  try {
+    const [r] = await sql`select version() as v, has_database_privilege(current_user, current_database(), 'CREATE') as can_create,
+      has_schema_privilege(current_user, 'public', 'CREATE') as can_tables`;
+    if (!r.can_tables) { const e = Object.assign(new Error("no CREATE on schema public"), { code: "42501" }); throw e; }
+    console.log(`Connected to ${d.label}: ${String(r.v).split(",")[0]}.`);
+    return d;
+  } catch (e) {
+    throw new Error(dbProblem(e, d.label));
+  } finally { await sql.end({ timeout: 2 }).catch(() => {}); }
+}
+
 async function main() {
   if (cmd === "network") {
     const c = readConfig(); c.network = args[1] === "on"; writeConfig(c);
@@ -51,9 +104,44 @@ async function main() {
     return 0;
   }
 
-  if (cmd === "init") {
+  if (cmd === "check-db") {
+    await checkDb();
+    return 0;
+  }
+
+  if (cmd === "configure") {
+    const d = await checkDb();
+    const f = path.join(data!, "server.json");
+    let old: Record<string, unknown> = {};
+    try { old = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+    const port = Number(process.env.STM_PORT) || Number(old.port) || DEFAULT_PORT;
+    const files = process.env.STM_FILES_DIR?.trim() || (typeof old.filesDir === "string" ? old.filesDir : undefined);
+    const next = { ...old, app: APP_ID, databaseUrl: d.url, databaseSsl: d.ssl ? "require" : "", host: "0.0.0.0", port, ...(files ? { filesDir: files } : {}) };
+    fs.mkdirSync(data!, { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(next, null, 2));
+    console.log(`Saved the server settings in ${f}.`);
+    process.env.STM_DATABASE_URL = d.url;
+    process.env.STM_DATABASE_SSL = d.ssl ? "require" : "";
+    if (files) { process.env.STM_FILES_DIR = files; fs.mkdirSync(files, { recursive: true }); }
+    // then the same as init: the tables, and the first director if one was given
+  }
+
+  if (cmd === "server") {
+    const c = readConfig();
+    const to = args[1];
+    if (!to || to === "off") { delete c.server; delete c.serverName; writeConfig(c); console.log("This computer keeps its records itself (offline)."); return 0; }
+    let url = /^https?:\/\//i.test(to) ? to : `http://${to}`;
+    try { const u = new URL(url); if (!u.port && u.protocol === "http:") u.port = String(DEFAULT_PORT); url = `${u.protocol}//${u.host}`; } catch { console.error(`"${to}" isn't a server address.`); return 2; }
+    let name: string | null = null;
+    try { const r = await fetch(`${url}/api/v1/server-info`, { signal: AbortSignal.timeout(4000) }); const j = await r.json() as { app?: string; name?: string }; if (j.app === APP_ID) name = j.name ?? null; } catch {}
+    c.server = url; c.serverName = name; writeConfig(c);
+    console.log(name ? `Connected to ${name} (${url}).` : `Will use the school's server at ${url} (it didn't answer just now; the app tries again when it opens).`);
+    return 0;
+  }
+
+  if (cmd === "init" || cmd === "configure") {
     const cfg = await open();
-    if (!fs.existsSync(configFile)) writeConfig(readConfig());
+    if (cmd === "init" && !fs.existsSync(configFile)) writeConfig(readConfig());
     let code = 0;
     const school = process.env.STM_SCHOOL?.trim();
     if (school) {
@@ -69,8 +157,9 @@ async function main() {
       if (await one(db().select({ id: t.users.id }).from(t.users).limit(1))) console.log("Accounts already exist; the director account was not changed.");
       else if (!USERNAME_RE.test(user) || passwordProblem(pass)) { console.error("The director account could not be created (username or password not allowed)."); code = 3; }
       else {
-        await db().insert(t.users).values({ username: user, displayName: process.env.STM_ADMIN_NAME?.trim() || user, role: "director", passwordHash: hashPassword(pass) });
-        console.log(`Created the director account "${user}".`);
+        // on a school server IT types a temporary password: the director chooses their own at first sign-in
+        await db().insert(t.users).values({ username: user, displayName: process.env.STM_ADMIN_NAME?.trim() || user, role: "director", passwordHash: hashPassword(pass), mustChangePassword: cmd === "configure" });
+        console.log(`Created the director account "${user}"${cmd === "configure" ? " (they choose a new password when they first sign in)" : ""}.`);
       }
     }
     console.log(dialect() === "pg" ? "Database ready (PostgreSQL)." : `Database ready: ${path.join(cfg.dataDir, "theatre.db")}`);

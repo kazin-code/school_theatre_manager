@@ -73,15 +73,32 @@ Nothing requires the internet.
       runs the server in a **worker thread** on a free 127.0.0.1 port (separate globals: Hono and Next.js
       each replace `Request`/`Response` differently) and sets `STM_API_URL`; `npm run dev` does the same
       with `scripts/dev.mjs`. The setup tool moved to `apps/server/src/tool.ts` (works on both databases).
-- [ ] Stage 4: packaging, intranet connect, IT guide
+- [x] Stage 4a: school network in the app. Settings → School network and `/connect` (a new computer):
+      search (UDP broadcast + 127.0.0.1 + the `school-theatre` name), check an address, connect, work
+      offline, and copy this computer's records into an empty server (full backup streamed into its
+      restore; a brand-new server gets its first director from the typed credentials). `config.json`
+      `server`/`serverName` picks the server (`src/server/api.ts` `where()`); the private server always
+      runs, so offline works any time. An unreachable server shows a plain screen with *Work offline*.
+      Help page `/help/school-network`.
+- [x] Stage 4b: packaging. Docker `server` and `web` images (`Dockerfile`, `deploy/compose.yaml`; CI runs
+      them against PostgreSQL). Windows server package `installer/server.nsi`: database page tested with
+      `stm-tool check-db` (plain-language PostgreSQL errors), `stm-tool configure` writes `server.json`
+      and creates the tables, `installer/server/server-task.ps1` registers the SYSTEM start-up task,
+      firewall rules (domain/private only) and locks the data folder to Administrators/SYSTEM. Client
+      installer `/SERVER=…` connects a classroom computer at install time. CI smoke-tests the server
+      installer silently against the runner's PostgreSQL and runs the API test on it.
+- [x] IT guide: `docs/INTRANET-SETUP.md` (shipped in both installers' Start menus)
+- [ ] Next: port the browser tests into the repo; HTTPS guidance is a reverse proxy for now
 
 ## Notes for whoever continues
 
 - `npm` installs don't work in the sandboxed build agent; GitHub Actions does. A local PostgreSQL 16 can
   be started for tests (see `docs/DEVELOPING.md` once written).
 - Browser tests used during development drive the real app with Playwright (setup, inventory, shows,
-  rentals, program builder, backups); they passed on stage 3 against the packed app on SQLite and on
-  PostgreSQL. Port them into the repo (stage 4).
+  rentals, program builder, backups, school network connect/offline/copy, a 15 MB upload); they passed
+  against the packed app on SQLite and on PostgreSQL. They aren't in the repo yet.
+- The Next.js proxy (`src/proxy.ts`) must not run for Server Actions or the backup upload: it buffers
+  only the first 10 MB of a request body (`proxyClientMaxBodySize`) and silently drops the rest.
 - Packed layout (what the installer ships, `dist/app`): `start.cjs`, `apps/client/server.js` (screens),
   `server/server.cjs` (private server), `tools/stm-tool.cjs`, `drizzle/{sqlite,pg}`, and
   `node_modules/better-sqlite3` (lib + prebuilds only; Next.js no longer traces it).

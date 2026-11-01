@@ -2,6 +2,10 @@
 ; Installs the app (a Node.js server that runs in the background plus a small launcher),
 ; brands it for the school, creates the database and data folders and the director account,
 ; adds shortcuts, an optional network rule, and an uninstaller that keeps the data by default.
+;
+;   School-Theatre-Manager-Setup.exe /SERVER=http://school-theatre:8417
+;     connects this computer to the school's server (no school details or director account asked:
+;     those come from the server). Works with /S for a silent install.
 
 Unicode true ; this file is UTF-8 with a byte-order mark so NSIS reads characters like … correctly
 SetCompressor /SOLID lzma
@@ -73,6 +77,7 @@ Var AdminUser
 Var AdminPass
 Var DataChoice
 Var DelOld
+Var ServerUrl
 Var OldCopy
 Var hKeep
 Var hFresh
@@ -135,6 +140,13 @@ Function .onInit
   StrCpy $ShortcutName "${APPNAME}"
   StrCpy $DataChoice "keep"
   StrCpy $DelOld "0"
+  ; /SERVER=…: this computer will use the school's server
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/SERVER=" $ServerUrl
+  ${If} ${Errors}
+    StrCpy $ServerUrl ""
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -288,6 +300,16 @@ FunctionEnd
 
 ; ---------- your school page ----------
 Function SchoolPage
+  ; connecting to the school's server: the school details come from there
+  ${If} $ServerUrl != ""
+    ${If} $School != ""
+      Call NameFromSaved
+    ${Else}
+      StrCpy $Program "${APPNAME}"
+      StrCpy $ShortcutName "${APPNAME}"
+    ${EndIf}
+    Abort
+  ${EndIf}
   ; keeping existing data: reuse the saved school details instead of asking again
   ${If} $IsUpgrade == "1"
   ${AndIf} $DataChoice != "fresh"
@@ -392,6 +414,9 @@ FunctionEnd
 Function AccountPage
   ${If} $IsUpgrade == "1"
     Abort ; existing database: keep its accounts
+  ${EndIf}
+  ${If} $ServerUrl != ""
+    Abort ; accounts are on the school's server
   ${EndIf}
   !insertmacro MUI_HEADER_TEXT "Director account" "This sign-in protects $Program. Keep the password somewhere safe."
   nsDialogs::Create 1018
@@ -512,6 +537,7 @@ Section "-Program" SecMain
   File "..\dist\${EXE}"
   File "app.ico"
   File "README.txt"
+  File /oname=School-Network-Setup.txt "..\dist\INTRANET-SETUP.txt"
   SetOutPath "$INSTDIR\node"
   File /r "..\dist\node\*.*"
   SetOutPath "$INSTDIR\app"
@@ -560,6 +586,10 @@ Section "-Program" SecMain
   ${If} $OldCopy != ""
     DetailPrint "Your previous data is kept in $OldCopy"
   ${EndIf}
+  ${If} $ServerUrl != ""
+    nsExec::ExecToLog '${TOOL} server "$ServerUrl" --data "$DataDir"'
+    Pop $0
+  ${EndIf}
   ; files the database step just created must be writable by everyone who uses the program
   nsExec::ExecToLog 'icacls "$DataDir" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q'
   Pop $0
@@ -587,6 +617,7 @@ Section "-Program" SecMain
     FileClose $1
   ${EndIf}
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Data folder.lnk" "$DataDir"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\School Network Setup (for IT).lnk" "$INSTDIR\School-Network-Setup.txt"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\Uninstall.exe"
 
   ; uninstaller and Apps & Features entry
@@ -652,6 +683,7 @@ Section "Uninstall"
   Delete "$INSTDIR\app.ico"
   Delete "$INSTDIR\school.ico"
   Delete "$INSTDIR\README.txt"
+  Delete "$INSTDIR\School-Network-Setup.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   RMDir /r "$SMPROGRAMS\${APPNAME}"

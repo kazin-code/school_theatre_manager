@@ -37,7 +37,8 @@ export function loadConfig(): Config {
   let file: Record<string, unknown> = {};
   const f = path.join(dataDir, "server.json");
   if (fs.existsSync(f)) file = JSON.parse(fs.readFileSync(f, "utf8"));
-  const pick = (env: string, key: string) => process.env[env] ?? (file[key] != null ? String(file[key]) : undefined);
+  // an empty variable counts as not set
+  const pick = (env: string, key: string) => process.env[env] || (file[key] != null && file[key] !== "" ? String(file[key]) : undefined);
   const databaseUrl = pick("STM_DATABASE_URL", "databaseUrl") || null;
   if (databaseUrl && !/^postgres(ql)?:\/\//.test(databaseUrl)) throw new Error("STM_DATABASE_URL must start with postgres://");
   const dialect = databaseUrl ? "pg" : "sqlite";

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
   push:
     branches: [dev, main]
-    paths-ignore: ["installer/School-Theatre-Manager-Setup.exe", "**/*.md"]
+    paths-ignore: ["installer/School-Theatre-Manager-Setup.exe", "installer/School-Theatre-Manager-Server-Setup.exe"]
 
 permissions:
   contents: write
@@ -67,6 +67,15 @@ jobs:
           New-Item -ItemType Directory -Force $bs | Out-Null
           Copy-Item -Recurse node_modules/better-sqlite3/lib, node_modules/better-sqlite3/prebuilds, node_modules/better-sqlite3/package.json $bs
           if (Test-Path dist/app/apps/client/data) { Remove-Item -Recurse -Force dist/app/apps/client/data }
+          # the IT guide, shipped with both installers
+          (Get-Content docs/INTRANET-SETUP.md) -join "`r`n" | Set-Content -Encoding utf8 dist/INTRANET-SETUP.txt
+          # the server package (Windows Server): the server alone, no screens
+          New-Item -ItemType Directory -Force dist/server-app/server, dist/server-app/tools, dist/server-app/node_modules/better-sqlite3/prebuilds | Out-Null
+          Copy-Item apps/server/dist/server.cjs dist/server-app/server/server.cjs
+          Copy-Item apps/server/dist/stm-tool.cjs, installer/server/server-task.ps1 dist/server-app/tools/
+          Copy-Item -Recurse -Force packages/core/drizzle dist/server-app/drizzle
+          Copy-Item -Recurse node_modules/better-sqlite3/lib, node_modules/better-sqlite3/package.json dist/server-app/node_modules/better-sqlite3/
+          Copy-Item node_modules/better-sqlite3/prebuilds/win32-x64.node dist/server-app/node_modules/better-sqlite3/prebuilds/
           # the same Node.js the app was built and its native modules were installed with
           Copy-Item (Get-Command node).Source dist/node/node.exe
           node -p "process.version" | Out-File dist/node/VERSION.txt
@@ -106,31 +115,78 @@ jobs:
           Stop-Process -Id $server.Id -Force
           Get-Content "$data\logs\server.log"
 
-      - name: Build the installer
+      - name: Build the installers
         shell: pwsh
         run: |
-          # NSIS reads scripts without a byte-order mark in the old Windows code page, which garbles characters like "…"
-          $bytes = [IO.File]::ReadAllBytes("installer\school-theatre.nsi")
-          if (-not ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)) { throw "installer\school-theatre.nsi must be saved as UTF-8 with BOM" }
           $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) { choco install nsis -y --no-progress | Out-Null }
-          & $makensis /V2 /DVERSION=$env:VERSION installer\school-theatre.nsi
-          if ($LASTEXITCODE) { throw "makensis failed" }
+          foreach ($nsi in "school-theatre.nsi", "server.nsi") {
+            # NSIS reads scripts without a byte-order mark in the old Windows code page, which garbles characters like "…"
+            $bytes = [IO.File]::ReadAllBytes("installer\$nsi")
+            if (-not ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)) { throw "installer\$nsi must be saved as UTF-8 with BOM" }
+            & $makensis /V2 /DVERSION=$env:VERSION "installer\$nsi"
+            if ($LASTEXITCODE) { throw "makensis failed for $nsi" }
+          }
           "Installer: {0:N1} MB" -f ((Get-Item dist\School-Theatre-Manager-Setup.exe).Length / 1MB)
+          "Server installer: {0:N1} MB" -f ((Get-Item dist\School-Theatre-Manager-Server-Setup.exe).Length / 1MB)
+
+      - name: Smoke test the server installer (PostgreSQL, silent install, classroom computer)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # the PostgreSQL that comes with the Windows runner
+          $svc = Get-Service -Name "postgresql*" | Select-Object -First 1
+          Set-Service $svc.Name -StartupType Manual; Start-Service $svc.Name
+          $env:PGPASSWORD = "root"
+          & "$env:PGBIN\psql" -U postgres -h localhost -c "CREATE ROLE theatre LOGIN PASSWORD 'Stage!2026'"
+          & "$env:PGBIN\psql" -U postgres -h localhost -c "CREATE DATABASE theatre OWNER theatre"
+          # a wrong password is refused, with exit code 4
+          $p = Start-Process dist\School-Theatre-Manager-Server-Setup.exe -ArgumentList "/S", "/DBHOST=localhost", "/DBNAME=theatre", "/DBUSER=theatre", "/DBPASS=wrong" -Wait -PassThru
+          if ($p.ExitCode -ne 4) { throw "a wrong database password should fail with 4, got $($p.ExitCode)" }
+          $p = Start-Process dist\School-Theatre-Manager-Server-Setup.exe -ArgumentList "/S", "/DBHOST=localhost", "/DBNAME=theatre", "/DBUSER=theatre", "/DBPASS=Stage!2026" -Wait -PassThru
+          $data = "$env:ProgramData\School Theatre Manager Server"
+          if ($p.ExitCode -ne 0) { Get-Content "$data\logs\server.log" -ErrorAction SilentlyContinue; throw "server setup failed: $($p.ExitCode)" }
+          Get-ScheduledTask -TaskName "School Theatre Manager Server" | Format-List TaskName, State
+          (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8417/api/v1/server-info).Content
+          # only administrators and SYSTEM may open the folder with the database password
+          $acl = (Get-Acl "$data\server.json").Access | ForEach-Object { $_.IdentityReference.Value }
+          "server.json: $($acl -join ', ')"
+          if ($acl | Where-Object { $_ -match "Users|Everyone" }) { throw "server.json is readable by more than administrators" }
+          node apps/server/test/api-test.mjs http://127.0.0.1:8417
+          if ($LASTEXITCODE) { Get-Content "$data\logs\server.log"; throw "API test against the installed server failed" }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$env:ProgramFiles\School Theatre Manager Server\app\tools\server-task.ps1" restart
+          if ($LASTEXITCODE) { throw "restart failed" }
+          # a classroom computer connected to the school server: its sign-in names the school's server
+          $client = "$env:RUNNER_TEMP\classroom"
+          New-Item -ItemType Directory -Force $client | Out-Null
+          & dist\node\node.exe dist\app\tools\stm-tool.cjs server http://127.0.0.1:8417 --data $client
+          $env:STM_DATA_DIR = $client; $env:PORT = "8421"; $env:HOSTNAME = "127.0.0.1"
+          $screens = Start-Process -FilePath dist\node\node.exe -ArgumentList "start.cjs" -WorkingDirectory dist\app -PassThru -WindowStyle Hidden
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8421/login; if ($r.Content -match "school&#x27;s server|school's server") { $ok = $true; break } } catch {} }
+          Stop-Process -Id $screens.Id -Force
+          if (-not $ok) { Get-Content "$client\logs\server.log" -ErrorAction SilentlyContinue; throw "the classroom computer didn't use the school server" }
+          # uninstall (in place, so it can be waited for): the task goes, the database stays
+          $p = Start-Process "$env:ProgramFiles\School Theatre Manager Server\Uninstall.exe" -ArgumentList "/S", "_?=$env:ProgramFiles\School Theatre Manager Server" -Wait -PassThru
+          if (Get-ScheduledTask -TaskName "School Theatre Manager Server" -ErrorAction SilentlyContinue) { throw "the task is still registered after uninstalling" }
+          & "$env:PGBIN\psql" -U postgres -h localhost -d theatre -tAc "select count(*) from users"
+          "Server installer smoke test passed"
 
       - uses: actions/upload-artifact@v4
         with:
           name: School-Theatre-Manager-Setup
-          path: dist/School-Theatre-Manager-Setup.exe
+          path: |
+            dist/School-Theatre-Manager-Setup.exe
+            dist/School-Theatre-Manager-Server-Setup.exe
 
       - name: Put the installer in installer/
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          Copy-Item dist\School-Theatre-Manager-Setup.exe installer\School-Theatre-Manager-Setup.exe -Force
+          Copy-Item dist\School-Theatre-Manager-Setup.exe, dist\School-Theatre-Manager-Server-Setup.exe installer\ -Force
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add installer/School-Theatre-Manager-Setup.exe
+          git add installer/School-Theatre-Manager-Setup.exe installer/School-Theatre-Manager-Server-Setup.exe
           git commit -m "Build installer ${{ env.VERSION }} from ${{ github.sha }}"
           git pull --rebase origin ${{ github.ref_name }}
           git push origin HEAD:${{ github.ref_name }}

@@ -2,7 +2,7 @@
 
 Software for running a school theatre program: plays and musicals with their cast, crew, pit, materials and photos; an inventory of costumes, props and set pieces; show checkouts with a full history of what was used, when and how; rentals to approved groups with condition tracking and renter ratings; printed programs with sponsors; and backups to the cloud. Each school brands it with its own name, logo and colors.
 
-It runs on one Windows computer and opens in the web browser. No internet connection or server is needed.
+It runs on one Windows computer and opens in the web browser. No internet connection or server is needed. Schools that want several computers to share one set of records can add a **school server** on their own network (still no internet): see [School network setup](docs/INTRANET-SETUP.md).
 
 ## Installing (Windows 10 or 11)
 
@@ -15,7 +15,18 @@ Running Setup again offers **Keep everything** (update the program, keep all dat
 
 Start-menu extras: **Reset Director Password** (run by a Windows administrator), **Stop** (the program keeps running in the background after you open it), and **Data folder**.
 
+To connect a computer to the school's server: **Settings → School network → Search the school network**, or install with `School-Theatre-Manager-Setup.exe /SERVER=http://school-theatre:8417`.
+
 Your data is in `C:\ProgramData\School Theatre Manager`. In **Settings → Backups & data**, turn on **Cloud backup** to keep a copy in a OneDrive, Google Drive or Dropbox folder, make a full backup zip, restore, or download spreadsheets.
+
+## School server (for IT)
+
+| Option | What to run |
+| --- | --- |
+| Windows Server (or any always-on Windows PC) | **[School-Theatre-Manager-Server-Setup.exe](installer/School-Theatre-Manager-Server-Setup.exe)**: asks for the PostgreSQL database, runs at start-up as a background task |
+| Linux with Docker | `docker compose -f deploy/compose.yaml up -d --build` (the server, plus optional screens for web browsers) |
+
+The records go in the school's PostgreSQL database; photos and files in a folder or share. Full steps, silent-install options, ports and troubleshooting: [docs/INTRANET-SETUP.md](docs/INTRANET-SETUP.md) (also in the Start menu as *School Network Setup (for IT)*).
 
 ## What it does
 
@@ -71,8 +82,10 @@ apps/client/          the Next.js app (screens only; every read and write goes t
   tools/start.cjs     starts the offline app: the private server, then the screens
 apps/server/          the server API: database, sign-in, permissions, files, backups; setup tool
 packages/core/        shared: database tables, migrations, validation, default lists, passwords
-installer/            Windows installer: NSIS script, launcher (C#), artwork, and the built installer
-docs/                 architecture and roadmap (IT setup guide to come)
+installer/            Windows installers: the app (school-theatre.nsi, launcher in C#) and the server
+                      package (server.nsi, server/server-task.ps1), artwork, and the built installers
+deploy/               Docker Compose example for a school server
+docs/                 architecture and roadmap; INTRANET-SETUP.md (the IT guide)
 ```
 
 The previous Go version is on the [`go-version`](../../tree/go-version) branch.
