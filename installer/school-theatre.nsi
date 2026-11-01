@@ -1,9 +1,9 @@
-; School Theatre Manager: Windows installer (NSIS 3)
+﻿; School Theatre Manager: Windows installer (NSIS 3)
 ; Installs the app (a Node.js server that runs in the background plus a small launcher),
 ; brands it for the school, creates the database and data folders and the director account,
 ; adds shortcuts, an optional network rule, and an uninstaller that keeps the data by default.
 
-Unicode true
+Unicode true ; this file is UTF-8 with a byte-order mark so NSIS reads characters like … correctly
 SetCompressor /SOLID lzma
 ManifestDPIAware true
 
