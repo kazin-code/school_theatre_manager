@@ -2,11 +2,13 @@
 /node_modules
 # next.js
 /.next/
+**/.next/
 /out/
 next-env.d.ts
 *.tsbuildinfo
 # local data created by `npm run dev`
 /data/
+apps/client/data/
 # build output (installer is built by GitHub Actions)
 /dist/
 # misc

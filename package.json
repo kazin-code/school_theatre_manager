@@ -3,13 +3,13 @@
   "version": "3.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio"
+    "dev": "next dev apps/client",
+    "build": "next build apps/client",
+    "start": "next start apps/client",
+    "lint": "eslint apps packages",
+    "typecheck": "next typegen apps/client && tsc -p apps/client --noEmit && tsc -p packages/core --noEmit",
+    "db:generate": "drizzle-kit generate --config packages/core/drizzle.config.ts",
+    "db:studio": "drizzle-kit studio --config packages/core/drizzle.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

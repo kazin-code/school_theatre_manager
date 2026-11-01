@@ -48,13 +48,15 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force dist/app, dist/node | Out-Null
-          Copy-Item -Recurse -Force .next/standalone/* dist/app/
-          Copy-Item -Recurse -Force .next/static dist/app/.next/static
-          Copy-Item -Recurse -Force public dist/app/public
-          Copy-Item -Recurse -Force drizzle dist/app/drizzle
-          Copy-Item tools/start.cjs dist/app/start.cjs
-          if (Test-Path dist/app/data) { Remove-Item -Recurse -Force dist/app/data }
-          npx esbuild tools/stm-tool.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/app/tools/stm-tool.cjs --external:better-sqlite3 --alias:server-only=./tools/empty.js --log-level=warning
+          # the standalone build keeps the repository layout: the app is in apps/client
+          Copy-Item -Recurse -Force apps/client/.next/standalone/* dist/app/
+          New-Item -ItemType Directory -Force dist/app/apps/client/.next | Out-Null
+          Copy-Item -Recurse -Force apps/client/.next/static dist/app/apps/client/.next/static
+          Copy-Item -Recurse -Force apps/client/public/* dist/app/apps/client/public/
+          Copy-Item -Recurse -Force packages/core/drizzle/sqlite dist/app/drizzle
+          Copy-Item apps/client/tools/start.cjs dist/app/start.cjs
+          if (Test-Path dist/app/apps/client/data) { Remove-Item -Recurse -Force dist/app/apps/client/data }
+          npx esbuild apps/client/tools/stm-tool.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/app/tools/stm-tool.cjs --external:better-sqlite3 --alias:server-only=./apps/client/tools/empty.js --tsconfig=apps/client/tsconfig.json --log-level=warning
           if ($LASTEXITCODE) { throw "esbuild failed" }
           # the same Node.js the app was built and its native modules were installed with
           Copy-Item (Get-Command node).Source dist/node/node.exe
@@ -77,7 +79,7 @@ jobs:
           $env:STM_SCHOOL = "Test High School"; $env:STM_PROGRAM = "Test Theatre"
           $env:STM_ADMIN_USER = "director"; $env:STM_ADMIN_NAME = "Test Director"; $env:STM_ADMIN_PASS = "Curtain2026!"
           $env:STM_MIGRATIONS = "$PWD\dist\app\drizzle"
-          $p = Start-Process -FilePath dist\SchoolTheatre.exe -ArgumentList "--prepare-logo", "`"$PWD\public\stage-logo.png`"", "`"$data\branding`"" -Wait -PassThru
+          $p = Start-Process -FilePath dist\SchoolTheatre.exe -ArgumentList "--prepare-logo", "`"$PWD\apps\client\public\stage-logo.png`"", "`"$data\branding`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "prepare-logo failed: $($p.ExitCode)" }
           if (-not (Test-Path "$data\branding\logo.ico")) { throw "logo.ico missing" }
           & dist\node\node.exe dist\app\tools\stm-tool.cjs init --data $data

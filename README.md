@@ -34,13 +34,13 @@ Requires Node.js 22 or newer (npm comes with it).
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000 — data is stored in ./data
+npm run dev          # http://localhost:3000 — data is stored in apps/client/data
 ```
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server with hot reload |
-| `npm run build` | Production build (`.next/standalone` is what the installer ships) |
+| `npm run build` | Production build (`apps/client/.next/standalone` is what the installer ships) |
 | `npm run typecheck` | Generates route types, then runs the TypeScript check |
 | `npm run db:generate` | Create a migration after changing `src/db/schema.ts` |
 | `npm run db:studio` | Browse the database with Drizzle Studio |
@@ -58,15 +58,21 @@ Moving to another database later means swapping the Drizzle dialect and driver i
 
 ## Layout
 
+The repository is being split into a client, a server and shared code, so the server can grow
+separately. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and its progress.
+
 ```
-src/app/(auth)        sign-in, first-run setup, change password
-src/app/(app)         the app: inventory, shows, rentals, renters, sponsors, settings…
-src/app/api           file downloads, exports, backups, logo, health check
-src/db                schema, validation (drizzle-zod), seeding, connection
-src/server            queries (cached), actions (Server Actions), auth, backups, files
-src/lib/program       program builder: document model, rendering, printing
-tools/                setup tool (database, director account, password reset) and server starter
-installer/            NSIS script, launcher (C#), artwork, and the built installer
+apps/client/          the Next.js app (screens; for now it also reads and writes the database)
+  src/app/(auth)      sign-in, first-run setup, change password
+  src/app/(app)       inventory, shows, rentals, renters, sponsors, settings…
+  src/app/api         file downloads, exports, backups, logo, health check
+  src/server          queries (cached), actions (Server Actions), auth, backups, files
+  src/lib/program     program builder: document model, rendering, printing
+  tools/              setup tool (database, director account, password reset) and server starter
+apps/server/          the server API (being built: stage 2)
+packages/core/        shared: database tables, migrations, validation, default lists, passwords
+installer/            Windows installer: NSIS script, launcher (C#), artwork, and the built installer
+docs/                 architecture and roadmap (IT setup guide to come)
 ```
 
 The previous Go version is on the [`go-version`](../../tree/go-version) branch.
