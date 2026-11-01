@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { ActionError } from "./auth";
 import type { Tag } from "./tags";
 import { T } from "./tags";
+import { scheduleCloud } from "./backup";
 
 export type Result<D = undefined> =
   | { ok: true; data: D }
@@ -34,6 +35,7 @@ export async function run<D>(fn: () => Promise<D> | D): Promise<Result<D>> {
 /** Expire cached reads after a change. The activity feed always changes too. */
 export function changed(...tags: Tag[]) {
   for (const t of new Set<Tag>([...tags, T.activity])) updateTag(t);
+  scheduleCloud();
 }
 
 export const nowIso = () => new Date().toISOString();
