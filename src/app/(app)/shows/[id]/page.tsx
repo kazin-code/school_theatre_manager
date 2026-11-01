@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Fragment, Suspense } from "react";
 import { notFound } from "next/navigation";
-import { CalendarDays, MapPin, Pencil, ShoppingBag } from "lucide-react";
+import { BookOpen, CalendarDays, MapPin, Pencil, ShoppingBag } from "lucide-react";
 import { requireUser } from "@/server/auth";
 import { getShow } from "@/server/queries/shows";
 import { getLists } from "@/server/settings";
@@ -38,6 +38,7 @@ async function Content({ params, searchParams }: Pick<PageProps<"/shows/[id]">, 
         crumbs={[{ href: past ? "/past-shows" : "/shows", label: past ? "Past shows" : "Current shows" }]}
         actions={<>
           {!past && <Link href={`/shows/${s.id}/checkout`} className={buttonVariants()}><ShoppingBag />Check out items</Link>}
+          <Link href={`/shows/${s.id}/program`} className={buttonVariants({ variant: "outline" })}><BookOpen />{d.hasProgram ? "Program" : "Make the program"}</Link>
           <Link href={`/shows/${s.id}/edit`} className={buttonVariants({ variant: "outline" })}><Pencil />Edit</Link>
           <ShowMenu id={s.id} title={s.title} status={s.status} outLines={d.lines.filter((l) => !l.line.dateReturned).length} canDelete={me.role === "director"} />
         </>}>

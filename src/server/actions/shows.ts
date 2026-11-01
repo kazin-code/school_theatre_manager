@@ -175,7 +175,7 @@ export async function reorderAction(showId: number, what: "people" | "numbers", 
 }
 
 // ---------- materials & photos ----------
-export async function addShowFilesAction(showId: number, kind: "material" | "photo", fd: FormData) {
+export async function addShowFilesAction(showId: number, kind: "material" | "photo" | "program", fd: FormData) {
   return run(async () => {
     const me = await actionUser();
     const s = showOrThrow(showId);
@@ -186,16 +186,16 @@ export async function addShowFilesAction(showId: number, kind: "material" | "pho
     const category = optText(80).parse(fd.get("category"));
     let sort = nextSort(showFiles, showId);
     for (const f of files) {
-      if (kind === "photo") {
-        const name = await savePhoto("showfiles", `show-${showId}-photo`, f);
+      if (kind === "photo" || kind === "program") {
+        const name = await savePhoto("showfiles", `show-${showId}-${kind}`, f);
         db().insert(showFiles).values({ showId, kind, file: name, originalName: f.name.slice(0, 200), size: f.size, sort: sort++, createdBy: me.displayName }).run();
       } else {
         const { name, size } = await saveDocument("showfiles", `show-${showId}-doc`, f);
         db().insert(showFiles).values({ showId, kind, file: name, originalName: f.name.slice(0, 200), size, category, sort: sort++, createdBy: me.displayName }).run();
       }
     }
-    logActivity(me.displayName, "show", `Added ${files.length} ${kind === "photo" ? "photo(s)" : "file(s)"} to ${s.title}`);
-    changed(T.shows);
+    logActivity(me.displayName, "show", `Added ${files.length} ${kind === "material" ? "file(s)" : kind === "program" ? "program picture(s)" : "photo(s)"} to ${s.title}`);
+    changed(T.shows, T.programs);
   });
 }
 
