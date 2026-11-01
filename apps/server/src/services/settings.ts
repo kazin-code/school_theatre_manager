@@ -35,7 +35,7 @@ export async function branding(): Promise<BrandInfo> {
   return { ...b, name: b.program || (b.school ? `${b.school} Theatre` : PRODUCT), logoVersion: lf ? String(Math.round(fs.statSync(lf).mtimeMs)) : null };
 }
 /** The Windows installer reads the school details from this file when it runs again (Keep). UTF-16 so any name works. */
-function writeBrandingIni(b: Branding) {
+export function writeBrandingIni(b: Branding) {
   const clean = (v?: string | null) => (v ?? "").replace(/[\r\n]+/g, " ").trim();
   const text = `[branding]\r\nschool=${clean(b.school)}\r\nprogram=${clean(b.program)}\r\nshort=${clean(b.short)}\r\ntagline=${clean(b.tagline)}\r\n`;
   fs.writeFileSync(path.join(dir("branding"), "branding.ini"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]));

@@ -3,14 +3,14 @@
   "version": "3.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev apps/client",
+    "dev": "node scripts/dev.mjs",
     "build": "next build apps/client",
-    "start": "next start apps/client",
+    "start": "node scripts/dev.mjs start",
     "lint": "eslint apps packages",
     "typecheck": "node packages/core/scripts/make-pg-schema.mjs --check && next typegen apps/client && tsc -p apps/client --noEmit && tsc -p packages/core --noEmit && tsc -p apps/server --noEmit",
     "db:generate": "node packages/core/scripts/make-pg-schema.mjs && drizzle-kit generate --config packages/core/drizzle.config.ts && drizzle-kit generate --config packages/core/drizzle.pg.config.ts",
     "db:studio": "drizzle-kit studio --config packages/core/drizzle.config.ts",
-    "server:build": "esbuild apps/server/src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=apps/server/dist/server.cjs --external:better-sqlite3 --tsconfig=apps/server/tsconfig.json --log-level=warning",
+    "server:build": "esbuild server=apps/server/src/index.ts stm-tool=apps/server/src/tool.ts --bundle --platform=node --target=node22 --format=cjs --outdir=apps/server/dist --out-extension:.js=.cjs --external:better-sqlite3 --tsconfig=apps/server/tsconfig.json --log-level=warning",
     "server:dev": "npm run server:build && node apps/server/dist/server.cjs"
   },
   "dependencies": {

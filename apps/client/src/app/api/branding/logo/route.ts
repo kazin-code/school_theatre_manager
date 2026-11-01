@@ -1,13 +1,14 @@
 import path from "node:path";
+import fs from "node:fs";
 import { connection } from "next/server";
-import { logoFile } from "@/server/settings";
-import { readFile } from "@/server/fsx";
-
-const TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+import { apiRaw } from "@/server/api";
 
 /** The school's logo, or the built-in stage logo. Public, so the sign-in page can show it. */
 export async function GET() {
   await connection();
-  const f = logoFile() ?? path.join(process.cwd(), "public", "stage-logo.png");
-  return new Response(readFile(f), { headers: { "Content-Type": TYPES[path.extname(f).toLowerCase()] ?? "image/png", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" } });
+  const r = await apiRaw("/branding/logo", { token: null }).catch(() => null);
+  if (r?.ok) return new Response(r.body, { headers: { "Content-Type": r.headers.get("content-type") ?? "image/png", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" } });
+  await r?.arrayBuffer().catch(() => {});
+  const f = path.join(process.cwd(), "public", "stage-logo.png");
+  return new Response(fs.readFileSync(/*turbopackIgnore: true*/ f), { headers: { "Content-Type": "image/png", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" } });
 }

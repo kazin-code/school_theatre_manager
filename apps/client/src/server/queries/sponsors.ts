@@ -1,13 +1,14 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import { asc, sql } from "drizzle-orm";
-import { db } from "@/db";
-import { sponsors } from "@stm/core/db/schema";
+import type { SponsorRow } from "@stm/server/types";
+import { api, cacheKey } from "../api";
 import { T } from "../tags";
 
-export async function listSponsors() {
+async function sponsorsAt(token: string, rev: string) {
   "use cache";
   cacheTag(T.sponsors);
   cacheLife("max");
-  return db().select().from(sponsors).orderBy(sql`${sponsors.active} DESC`, asc(sponsors.sort), sql`${sponsors.name} COLLATE NOCASE`).all();
+  void rev;
+  return api<SponsorRow[]>("/sponsors", { token });
 }
+export async function listSponsors() { const k = await cacheKey(); return sponsorsAt(k.token, k.rev); }

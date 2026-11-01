@@ -12,6 +12,9 @@
       ],
       "@stm/core/*": [
         "../../packages/core/src/*"
+      ],
+      "@stm/server/*": [
+        "../server/src/*"
       ]
     }
   },
@@ -22,7 +25,8 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts",
-    "../../packages/core/src/**/*.ts"
+    "../../packages/core/src/**/*.ts",
+    "../server/src/**/*.ts"
   ],
   "exclude": [
     "node_modules"

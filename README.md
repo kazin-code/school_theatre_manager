@@ -34,27 +34,27 @@ Requires Node.js 22 or newer (npm comes with it).
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000 — data is stored in apps/client/data
+npm run dev          # http://localhost:3000 (screens) + the server on 127.0.0.1:8419; data in apps/client/data
 ```
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Development server with hot reload |
-| `npm run build` | Production build (`apps/client/.next/standalone` is what the installer ships) |
+| `npm run dev` | The server (rebuilt and restarted when its code changes) and the screens with hot reload |
+| `npm run build` | Production build of the screens (`apps/client/.next/standalone`) |
+| `npm run server:build` | The server and setup tool, one file each (`apps/server/dist`) |
+| `npm start` | Run the production build of the screens against the server |
 | `npm run typecheck` | Generates route types, then runs the TypeScript check |
-| `npm run db:generate` | Create a migration after changing `src/db/schema.ts` |
+| `npm run db:generate` | Create migrations (SQLite and PostgreSQL) after changing `packages/core/src/db/schema.ts` |
 | `npm run db:studio` | Browse the database with Drizzle Studio |
 
-The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`) on every push to `dev` or `main`: it builds the app, bundles the matching Node.js runtime, the setup tool and the launcher, smoke-tests them, packs everything with NSIS, and commits the result to `installer/`.
+The Windows installer is built by GitHub Actions (`.github/workflows/windows-installer.yml`) on every push to `dev` or `main`: it builds the screens and the server, bundles the matching Node.js runtime, the setup tool and the launcher, smoke-tests them, packs everything with NSIS, and commits the result to `installer/`.
 
 ## Stack
 
-- **Next.js 16** (App Router, Cache Components: reads use `"use cache"` + `cacheTag`, writes are Server Actions that call `updateTag`)
-- **SQLite** via **better-sqlite3**, accessed with **Drizzle ORM**; migrations in `drizzle/`
-- **drizzle-zod** builds the validation schemas from the tables (`src/db/validation.ts`); **react-hook-form** uses them in the browser and the Server Actions check them again
+- **Next.js 16** for the screens (App Router, Cache Components: reads use `"use cache"` + `cacheTag`, writes are Server Actions that call the server and then `updateTag`)
+- **Hono** for the server API; **SQLite** via **better-sqlite3** offline, **PostgreSQL** (postgres.js) on a school server, both through **Drizzle ORM**; migrations in `packages/core/drizzle/`
+- **drizzle-zod** builds the validation schemas from the tables (`packages/core/src/db/validation.ts`); **react-hook-form** uses them in the browser and the server checks them again
 - **shadcn/ui** (Base UI) with **next-themes** for light/dark, **lucide-react** icons, **TanStack Table** v9 for lists
-
-Moving to another database later means swapping the Drizzle dialect and driver in `src/db/`; the tables, types and validation schemas stay the same.
 
 ## Layout
 
@@ -62,14 +62,14 @@ The repository is being split into a client, a server and shared code, so the se
 separately. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and its progress.
 
 ```
-apps/client/          the Next.js app (screens; for now it also reads and writes the database)
+apps/client/          the Next.js app (screens only; every read and write goes to the server)
   src/app/(auth)      sign-in, first-run setup, change password
   src/app/(app)       inventory, shows, rentals, renters, sponsors, settings…
-  src/app/api         file downloads, exports, backups, logo, health check
-  src/server          queries (cached), actions (Server Actions), auth, backups, files
-  src/lib/program     program builder: document model, rendering, printing
-  tools/              setup tool (database, director account, password reset) and server starter
-apps/server/          the server API (being built: stage 2)
+  src/app/api         file downloads, exports, backups and logo, passed through from the server
+  src/server          the API client, cached reads, Server Actions, sign-in cookie
+  src/lib/program     program builder: rendering, printing
+  tools/start.cjs     starts the offline app: the private server, then the screens
+apps/server/          the server API: database, sign-in, permissions, files, backups; setup tool
 packages/core/        shared: database tables, migrations, validation, default lists, passwords
 installer/            Windows installer: NSIS script, launcher (C#), artwork, and the built installer
 docs/                 architecture and roadmap (IT setup guide to come)

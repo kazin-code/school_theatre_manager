@@ -1,10 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { count } from "drizzle-orm";
 import { connection } from "next/server";
-import { db } from "@/db";
-import { users } from "@stm/core/db/schema";
-import { currentUser } from "@/server/auth";
+import { currentUser, setupNeeded } from "@/server/auth";
 import { AuthFrame } from "../auth-frame";
 import { LoginForm } from "./login-form";
 
@@ -16,7 +13,7 @@ export default function Page() {
 
 async function Gate() {
   await connection();
-  if (db().select({ n: count() }).from(users).get()!.n === 0) redirect("/setup");
+  if (await setupNeeded()) redirect("/setup");
   if (await currentUser()) redirect("/");
   return <AuthFrame><LoginForm /></AuthFrame>;
 }

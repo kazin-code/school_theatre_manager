@@ -43,6 +43,7 @@ export async function getRenter(id: number) {
     .where(eq(t.rentals.renterId, id)).orderBy(desc(t.rentals.dateOut), desc(t.rentals.id));
   return { renter, history };
 }
+export type RenterDetail = NonNullable<Awaited<ReturnType<typeof getRenter>>>;
 
 export async function getRental(id: number) {
   const r = await one(db().select({ rental: t.rentals, renter: t.renters }).from(t.rentals).innerJoin(t.renters, eq(t.renters.id, t.rentals.renterId)).where(eq(t.rentals.id, id)).limit(1));
@@ -51,6 +52,7 @@ export async function getRental(id: number) {
     .from(t.rentalItems).innerJoin(t.items, eq(t.items.id, t.rentalItems.itemId)).where(eq(t.rentalItems.rentalId, id)).orderBy(asc(t.items.category), asc(t.items.name));
   return { ...r, lines };
 }
+export type RentalDetail = NonNullable<Awaited<ReturnType<typeof getRental>>>;
 
 // ---------- renters ----------
 export function saveRenter(me: Me, id: number | null, input: unknown) {

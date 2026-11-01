@@ -14,7 +14,8 @@ import { ZodError } from "zod";
 import { APP_ID, APP_VERSION } from "@stm/core/version";
 import { dialect } from "./db";
 import { ApiError } from "./errors";
-import { filePath } from "./files";
+import { dataDir, filePath } from "./files";
+import { logActivity } from "./activity";
 import type { Me } from "./me";
 import * as auth from "./services/auth";
 import * as settings from "./services/settings";
@@ -29,6 +30,15 @@ import { exportCsv } from "./services/exports";
 type Env = { Variables: { me: Me | null; token: string | null } };
 const api = new Hono<Env>();
 
+/**
+ * A number that changes after every change to the data. Clients put it in their cache keys, so a
+ * screen shows changes made from any computer, not only its own. The random start makes it change
+ * when the server restarts too (a restore, say).
+ */
+const boot = Math.random().toString(36).slice(2, 8);
+let changes = 0;
+export const revision = () => `${boot}.${changes}`;
+
 // ---------- plumbing ----------
 api.use("*", secureHeaders({ crossOriginResourcePolicy: "same-site" }));
 api.use("*", bodyLimit({ maxSize: 260 * 1024 * 1024, onError: (c) => c.json({ error: "That upload is too large (the limit is 250 MB)." }, 413) }));
@@ -38,7 +48,8 @@ api.use("*", async (c, next) => {
   c.set("token", token);
   c.set("me", await auth.userFromToken(token));
   await next();
-  if (c.req.method !== "GET" && c.res.status < 300) void backup.scheduleCloud().catch(() => {});
+  if (c.req.method !== "GET" && c.res.status < 300) { changes++; void backup.scheduleCloud().catch(() => {}); }
+  c.res.headers.set("X-STM-Revision", revision());
 });
 
 /** The signed-in person, or a 401/403 error. */
@@ -82,6 +93,7 @@ api.notFound((c) => c.json({ error: "Not found." }, 404));
 
 // ---------- public ----------
 api.get("/ping", (c) => c.json({ app: APP_ID, version: APP_VERSION }));
+api.get("/revision", (c) => c.json({ revision: revision() }));
 api.get("/server-info", async (c) => {
   const b = await settings.branding();
   return c.json({ app: APP_ID, version: APP_VERSION, name: b.name, school: b.school ?? null, database: dialect() === "pg" ? "postgresql" : "sqlite" });
@@ -192,10 +204,12 @@ function sendFile(c: Context, p: string, opts: { name?: string; download?: boole
 }
 api.get("/files/:kind/:name", async (c) => {
   need(c);
-  const sub = ({ photos: "photos", show: "showfiles", sponsor: "sponsors" } as const)[c.req.param("kind") as "photos"];
+  const sub = ({ photos: "photos", show: "showfiles", sponsor: "sponsors" } as Record<string, "photos" | "showfiles" | "sponsors">)[c.req.param("kind")];
   const p = sub ? filePath(sub, c.req.param("name")) : null;
   if (!p || !fs.existsSync(p)) return c.json({ error: "Not found." }, 404);
-  return sendFile(c, p, { name: c.req.query("name") ?? undefined, download: c.req.query("download") != null });
+  // show files download under the name they were uploaded with
+  const name = c.req.query("name") ?? (sub === "showfiles" ? await shows.originalName(c.req.param("name")) : null) ?? undefined;
+  return sendFile(c, p, { name, download: c.req.query("download") != null });
 });
 
 // ---------- spreadsheets ----------
@@ -210,9 +224,15 @@ api.get("/exports/:what", async (c) => {
 api.get("/backups", async (c) => {
   need(c, "director");
   const st = await backup.backupState();
-  return ok(c, { ...st, mirror: await backup.mirrorRoot(), database: dialect() === "pg" ? "postgresql" : "sqlite", backups: backup.listBackups(), candidates: dialect() === "sqlite" ? backup.cloudCandidates() : [] });
+  return ok(c, { ...st, dataDir: dataDir(), mirror: await backup.mirrorRoot(), database: dialect() === "pg" ? "postgresql" : "sqlite", backups: backup.listBackups(), candidates: dialect() === "sqlite" ? backup.cloudCandidates() : [] });
 });
-api.post("/backups", async (c) => { need(c, "director"); const full = (await body(c)).full !== false; return ok(c, full ? await backup.makeFullBackup() : { name: await backup.dailyBackup(true) }); });
+api.post("/backups", async (c) => {
+  const me = need(c, "director");
+  const full = (await body(c)).full !== false;
+  const r = full ? await backup.makeFullBackup() : { name: await backup.dailyBackup(true) };
+  await logActivity(me.displayName, "backup", full ? `Made a full backup (${r.name})` : "Made a database backup");
+  return ok(c, r);
+});
 api.get("/backups/:name", (c) => {
   need(c, "director");
   const name = c.req.param("name");
@@ -221,22 +241,34 @@ api.get("/backups/:name", (c) => {
   return sendFile(c, p, { download: true, cache: "no-store" });
 });
 api.post("/backups/restore", async (c) => {
-  need(c, "director");
+  const me = need(c, "director");
   if (c.req.header("x-confirm") !== "RESTORE") throw new ApiError(400, "Type RESTORE to confirm.");
   const raw = c.req.raw.body;
   if (!raw) throw new ApiError(400, "Choose a backup file.");
   const tmp = path.join(os.tmpdir(), `stm-upload-${Date.now()}`);
   try {
     await pipeline(Readable.fromWeb(raw as import("node:stream/web").ReadableStream), fs.createWriteStream(tmp));
-    return ok(c, await backup.restore(tmp));
+    const r = await backup.restore(tmp);
+    await logActivity(me.displayName, "backup", `Restored from a backup file (${r.files} files)`).catch(() => {});
+    return ok(c, r);
   } finally { if (fs.existsSync(tmp)) fs.rmSync(tmp); }
 });
-api.put("/backups/cloud", async (c) => { need(c, "director"); const f = (await body(c)).folder; await backup.setCloudFolder(typeof f === "string" && f.trim() ? f.trim() : null); if (typeof f === "string" && f.trim()) await backup.syncCloud(); return ok(c); });
+api.put("/backups/cloud", async (c) => {
+  const me = need(c, "director");
+  const f = (await body(c)).folder;
+  const folder = typeof f === "string" && f.trim() ? f.trim() : null;
+  await backup.setCloudFolder(folder);
+  await logActivity(me.displayName, "backup", folder ? `Cloud backup folder set to ${folder}` : "Turned off the cloud backup folder");
+  if (folder) await backup.syncCloud();
+  return ok(c);
+});
 api.post("/backups/cloud/sync", async (c) => { need(c, "director"); await backup.syncCloud(); return ok(c); });
 api.post("/backups/cloud/restore", async (c) => {
-  need(c, "director");
+  const me = need(c, "director");
   if (String((await body(c)).confirm ?? "").trim().toUpperCase() !== "RESTORE") throw new ApiError(400, "Type RESTORE to confirm.");
-  return ok(c, await backup.restoreFromCloud());
+  const r = await backup.restoreFromCloud();
+  await logActivity(me.displayName, "backup", `Restored from the cloud backup folder (${r.files} files)`).catch(() => {});
+  return ok(c, r);
 });
 
 export const app = new Hono().route("/api/v1", api);

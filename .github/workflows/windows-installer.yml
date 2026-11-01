@@ -1,6 +1,7 @@
 name: Windows installer
 
-# Builds School-Theatre-Manager-Setup.exe on Windows: the Next.js app (standalone), the matching
+# Builds School-Theatre-Manager-Setup.exe on Windows: the screens (Next.js standalone), the private server
+# (apps/server, run in a worker thread by start.cjs), the matching
 # Node.js runtime, the setup tool and the launcher, packed with NSIS. The installer is smoke-tested
 # (the app is started from the packed files and must answer), uploaded as an artifact, and copied
 # into installer/ on the branch so non-technical users can download it from GitHub.
@@ -40,6 +41,7 @@ jobs:
         run: |
           npm run typecheck
           npm run build
+          npm run server:build
 
       - name: Assemble the app
         shell: pwsh
@@ -53,15 +55,22 @@ jobs:
           New-Item -ItemType Directory -Force dist/app/apps/client/.next | Out-Null
           Copy-Item -Recurse -Force apps/client/.next/static dist/app/apps/client/.next/static
           Copy-Item -Recurse -Force apps/client/public/* dist/app/apps/client/public/
-          Copy-Item -Recurse -Force packages/core/drizzle/sqlite dist/app/drizzle
+          # the private server (data, files, backups), its setup tool and the migrations for both databases
+          New-Item -ItemType Directory -Force dist/app/server, dist/app/tools | Out-Null
+          Copy-Item apps/server/dist/server.cjs dist/app/server/server.cjs
+          Copy-Item apps/server/dist/stm-tool.cjs dist/app/tools/stm-tool.cjs
+          Copy-Item -Recurse -Force packages/core/drizzle dist/app/drizzle
           Copy-Item apps/client/tools/start.cjs dist/app/start.cjs
+          # the server's one native module: only what runs (the SQLite sources stay behind)
+          $bs = "dist/app/node_modules/better-sqlite3"
+          if (Test-Path $bs) { Remove-Item -Recurse -Force $bs }
+          New-Item -ItemType Directory -Force $bs | Out-Null
+          Copy-Item -Recurse node_modules/better-sqlite3/lib, node_modules/better-sqlite3/prebuilds, node_modules/better-sqlite3/package.json $bs
           if (Test-Path dist/app/apps/client/data) { Remove-Item -Recurse -Force dist/app/apps/client/data }
-          npx esbuild apps/client/tools/stm-tool.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/app/tools/stm-tool.cjs --external:better-sqlite3 --alias:server-only=./apps/client/tools/empty.js --tsconfig=apps/client/tsconfig.json --log-level=warning
-          if ($LASTEXITCODE) { throw "esbuild failed" }
           # the same Node.js the app was built and its native modules were installed with
           Copy-Item (Get-Command node).Source dist/node/node.exe
           node -p "process.version" | Out-File dist/node/VERSION.txt
-          if (-not (Test-Path dist/app/node_modules/better-sqlite3/prebuilds/win32-x64.node)) { throw "better-sqlite3 Windows binary missing from the standalone build" }
+          if (-not (Test-Path dist/app/node_modules/better-sqlite3/prebuilds/win32-x64.node)) { throw "better-sqlite3 Windows binary missing" }
           "App size: {0:N0} MB" -f ((Get-ChildItem -Recurse dist/app | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Build the launcher

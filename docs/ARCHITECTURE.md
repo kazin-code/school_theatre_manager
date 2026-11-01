@@ -63,7 +63,16 @@ Nothing requires the internet.
       `packages/core/drizzle/{sqlite,pg}`. Full backups carry `data.json`, so a backup restores on either
       database (this is also how an offline computer's data moves to the school server).
       `apps/server/test/api-test.mjs` runs end to end; CI runs it on both databases.
-- [ ] Stage 3: client on the API
+- [x] Stage 3: client on the API. `apps/client` has no database code: `src/server/api.ts` calls the server
+      (session token in the httpOnly `stm_session` cookie, sent as `Authorization: Bearer`); Server Actions
+      are thin calls; file, export and backup routes stream through (`src/server/pass.ts`). Cached reads
+      (`"use cache"`) take the session token and the server's **revision** (`GET /api/v1/revision`, bumped
+      after every change) as arguments, so changes from any computer show on the next page load;
+      `updateTag` still expires this computer's cache at once. Response types come from
+      `apps/server/src/types.ts` (`import type` only, alias `@stm/server/*`). Offline, `tools/start.cjs`
+      runs the server in a **worker thread** on a free 127.0.0.1 port (separate globals: Hono and Next.js
+      each replace `Request`/`Response` differently) and sets `STM_API_URL`; `npm run dev` does the same
+      with `scripts/dev.mjs`. The setup tool moved to `apps/server/src/tool.ts` (works on both databases).
 - [ ] Stage 4: packaging, intranet connect, IT guide
 
 ## Notes for whoever continues
@@ -71,5 +80,9 @@ Nothing requires the internet.
 - `npm` installs don't work in the sandboxed build agent; GitHub Actions does. A local PostgreSQL 16 can
   be started for tests (see `docs/DEVELOPING.md` once written).
 - Browser tests used during development drive the real app with Playwright (setup, inventory, shows,
-  rentals, program builder, backups). Port them into the repo when the API lands.
+  rentals, program builder, backups); they passed on stage 3 against the packed app on SQLite and on
+  PostgreSQL. Port them into the repo (stage 4).
+- Packed layout (what the installer ships, `dist/app`): `start.cjs`, `apps/client/server.js` (screens),
+  `server/server.cjs` (private server), `tools/stm-tool.cjs`, `drizzle/{sqlite,pg}`, and
+  `node_modules/better-sqlite3` (lib + prebuilds only; Next.js no longer traces it).
 - The Windows installer is built and smoke-tested by `.github/workflows/windows-installer.yml`.

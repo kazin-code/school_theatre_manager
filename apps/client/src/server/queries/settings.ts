@@ -1,21 +1,23 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import { desc } from "drizzle-orm";
-import { db } from "@/db";
-import { activity, users } from "@stm/core/db/schema";
+import type { ActivityRow, UserRow } from "@stm/server/types";
+import { api, cacheKey } from "../api";
 import { T } from "../tags";
 
-export async function getUsers() {
+async function usersAt(token: string, rev: string) {
   "use cache";
   cacheTag(T.users);
   cacheLife("max");
-  return db().select({ id: users.id, username: users.username, displayName: users.displayName, role: users.role, active: users.active, mustChangePassword: users.mustChangePassword, lastLoginAt: users.lastLoginAt })
-    .from(users).orderBy(users.role, users.username).all();
+  void rev;
+  return api<UserRow[]>("/users", { token });
 }
+export async function getUsers() { const k = await cacheKey(); return usersAt(k.token, k.rev); }
 
-export async function getActivity(limit = 300) {
+async function activityAt(limit: number, token: string, rev: string) {
   "use cache";
   cacheTag(T.activity);
   cacheLife("max");
-  return db().select().from(activity).orderBy(desc(activity.id)).limit(limit).all();
+  void rev;
+  return api<ActivityRow[]>(`/activity?limit=${limit}`, { token });
 }
+export async function getActivity(limit = 300) { const k = await cacheKey(); return activityAt(limit, k.token, k.rev); }

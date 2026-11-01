@@ -1,9 +1,9 @@
 import "server-only";
 import dgram from "node:dgram";
 import os from "node:os";
-import { APP_ID, APP_VERSION, DEFAULT_PORT, DISCOVERY_PORT, SERVER_HOSTNAME } from "@stm/core/version";
-import { dataDir } from "./paths";
-import { exists, pjoin, readText, writeFile } from "./fsx";
+import { APP_ID, DEFAULT_PORT, DISCOVERY_PORT, SERVER_HOSTNAME } from "@stm/core/version";
+import fs from "node:fs";
+import path from "node:path";
 
 /**
  * School network ("intranet") mode. Every computer works offline on its own data by default.
@@ -11,16 +11,23 @@ import { exists, pjoin, readText, writeFile } from "./fsx";
  * school network and connect (server: "http://…"). Nothing here uses the internet.
  */
 export type NetConfig = { port: number; network: boolean; server: string | null };
-const file = () => pjoin(dataDir(), "config.json");
+/** This computer's data folder (the launcher sets STM_DATA_DIR). */
+function dataDir(): string {
+  if (process.env.STM_DATA_DIR) return process.env.STM_DATA_DIR;
+  if (process.platform === "win32") return path.join(process.env.ProgramData || "C:\\ProgramData", "School Theatre Manager");
+  return path.resolve(/*turbopackIgnore: true*/ "data");
+}
+const file = () => path.join(dataDir(), "config.json");
+const exists = (p: string) => fs.existsSync(/*turbopackIgnore: true*/ p);
 export function readNetConfig(): NetConfig {
   let c: Partial<NetConfig> = {};
-  try { if (exists(file())) c = JSON.parse(readText(file())); } catch {}
+  try { if (exists(file())) c = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file(), "utf8")); } catch {}
   return { port: Number(c.port) || DEFAULT_PORT, network: !!c.network, server: typeof c.server === "string" && c.server ? c.server : null };
 }
 export function writeNetConfig(patch: Partial<NetConfig>) {
   let raw: Record<string, unknown> = {};
-  try { if (exists(file())) raw = JSON.parse(readText(file())); } catch {}
-  writeFile(file(), JSON.stringify({ ...raw, ...readNetConfig(), ...patch }, null, 2));
+  try { if (exists(file())) raw = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file(), "utf8")); } catch {}
+  fs.writeFileSync(/*turbopackIgnore: true*/ file(), JSON.stringify({ ...raw, ...readNetConfig(), ...patch }, null, 2));
 }
 
 export type ServerInfo = { app: string; version: string; name: string; school: string | null; url: string };
@@ -40,7 +47,7 @@ export function normalizeUrl(input: string): string | null {
 /** Ask an address whether it's a School Theatre Manager server. */
 export async function checkServer(url: string, timeoutMs = 2500): Promise<ServerInfo | null> {
   try {
-    const r = await fetch(`${url}/api/server-info`, { signal: AbortSignal.timeout(timeoutMs), cache: "no-store" });
+    const r = await fetch(`${url}/api/v1/server-info`, { signal: AbortSignal.timeout(timeoutMs), cache: "no-store" });
     if (!r.ok) return null;
     const j = (await r.json()) as Partial<ServerInfo>;
     if (j.app !== APP_ID) return null;
@@ -88,23 +95,4 @@ export async function discover(waitMs = 1800): Promise<ServerInfo[]> {
   // confirm each answer over HTTP (the address must actually serve the app)
   const checked = await Promise.all([...found.values()].map(async (f) => ((await checkServer(f.url)) ? f : null)));
   return checked.filter((x): x is ServerInfo => !!x);
-}
-
-const g = globalThis as unknown as { __stmResponder?: dgram.Socket };
-/** On the school's server: answer "where are you?" from other computers. */
-export function startDiscoveryResponder(info: () => { name: string; school: string | null }) {
-  if (g.__stmResponder) return;
-  const sock = dgram.createSocket({ type: "udp4", reuseAddr: true });
-  sock.on("error", (e) => { console.error("school network discovery unavailable:", e.message); try { sock.close(); } catch {} g.__stmResponder = undefined; });
-  sock.on("message", (msg, rinfo) => {
-    try {
-      const q = JSON.parse(msg.toString("utf8"));
-      if (q.app !== APP_ID || q.ask !== "where") return;
-      const i = info();
-      sock.send(Buffer.from(JSON.stringify({ app: APP_ID, version: APP_VERSION, name: i.name, school: i.school, port: Number(process.env.PORT) || DEFAULT_PORT })), rinfo.port, rinfo.address);
-    } catch {}
-  });
-  sock.bind(DISCOVERY_PORT, () => console.log(`School network: answering on UDP ${DISCOVERY_PORT}`));
-  sock.unref();
-  g.__stmResponder = sock;
 }

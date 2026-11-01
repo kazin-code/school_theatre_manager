@@ -55,6 +55,11 @@ async function nextSort(table: typeof t.showPeople | typeof t.showNumbers | type
 }
 
 // ---------- the show itself ----------
+/** The name a show file was uploaded with, for downloads. */
+export async function originalName(file: string) {
+  return (await one(db().select({ n: t.showFiles.originalName }).from(t.showFiles).where(eq(t.showFiles.file, file)).limit(1)))?.n ?? null;
+}
+
 export function saveShow(me: Me, id: number | null, input: unknown) {
   return write(async () => {
     const v = showSchema.parse(input);

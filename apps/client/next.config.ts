@@ -8,13 +8,11 @@ const nextConfig: NextConfig = {
   // Cached components: reads use "use cache" + cacheTag; mutations call updateTag.
   cacheComponents: true,
   partialPrefetching: true,
-  // A self-contained server the Windows installer ships with its own copy of Node.
+  // Self-contained screens the Windows installer ships with its own copy of Node (beside the server).
   output: "standalone",
   outputFileTracingRoot: root,
-  serverExternalPackages: ["better-sqlite3"],
-  // Ship the SQL migrations with the server.
-  outputFileTracingIncludes: { "/**": ["../../packages/core/drizzle/**/*"] },
-  // Never ship a development database.
+  // The screens hold no data: the server (apps/server) has the database, files and backups.
+  // Never ship a development data folder.
   outputFileTracingExcludes: { "/**": ["./data/**/*"] },
   experimental: {
     // Show materials (scripts, scores, rehearsal tracks) can be large.
