@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Starts the app server for the Windows launcher: writes its output to <data>\logs\server.log
 // and its process id to <data>\server.pid, so the launcher can find and stop it.
 const fs = require("fs");

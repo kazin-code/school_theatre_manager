@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,12 +26,12 @@ export function Checkout({ showId, fromPull, items, cast }: { showId: number; fr
   const [date, setDate] = useState(todayISO());
   const [lines, setLines] = useState<Line[]>([]);
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  // The pull list lives in this browser, so it appears just after the page loads: take it in once.
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    if (!fromPull || loaded || !pull.items.length) return;
+  if (fromPull && !loaded && pull.items.length) {
     setLoaded(true);
     setLines(pull.items.filter((p) => byId.has(p.id)).map((p) => ({ key: k++, itemId: p.id, qty: Math.min(p.qty, Math.max(1, byId.get(p.id)!.free)), character: "", actor: "", scene: "", usageNotes: "" })));
-  }, [fromPull, loaded, pull.items, byId]);
+  }
 
   const used = (id: number) => lines.filter((l) => l.itemId === id).reduce((a, l) => a + l.qty, 0);
   const add = (it: It) => setLines((ls) => [...ls, { key: k++, itemId: it.id, qty: 1, character: "", actor: "", scene: "", usageNotes: "" }]);
@@ -52,7 +52,7 @@ export function Checkout({ showId, fromPull, items, cast }: { showId: number; fr
   const problems = lines.filter((l) => used(l.itemId) > (byId.get(l.itemId)?.free ?? 0));
 
   const submit = () => start(async () => {
-    const r = await checkoutAction(showId, { dateOut: date, lines: lines.map(({ key: _k, ...l }) => l) });
+    const r = await checkoutAction(showId, { dateOut: date, lines: lines.map((l) => ({ itemId: l.itemId, qty: l.qty, character: l.character, actor: l.actor, scene: l.scene, usageNotes: l.usageNotes })) });
     if (!r.ok) { toast.error(r.error); return; }
     if (fromPull) pullList.removeMany(r.data.ids);
     toast.success(`Checked out ${lines.reduce((a, l) => a + l.qty, 0)} piece(s).`);

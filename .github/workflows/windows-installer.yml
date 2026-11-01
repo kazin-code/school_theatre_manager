@@ -33,7 +33,8 @@ jobs:
           cache: npm
 
       - name: Install packages
-        run: npm ci
+        # better-sqlite3 ships a prebuilt Windows binary; skip npm's automatic node-gyp compile
+        run: npm ci --ignore-scripts
 
       - name: Type-check and build
         run: |
@@ -58,9 +59,7 @@ jobs:
           # the same Node.js the app was built and its native modules were installed with
           Copy-Item (Get-Command node).Source dist/node/node.exe
           node -p "process.version" | Out-File dist/node/VERSION.txt
-          $nb = (Get-ChildItem -Recurse dist/app/node_modules -Filter better_sqlite3.node | Select-Object -First 1)
-          if (-not $nb) { throw "better-sqlite3 native module missing from the standalone build" }
-          "better-sqlite3: $($nb.FullName)"
+          if (-not (Test-Path dist/app/node_modules/better-sqlite3/prebuilds/win32-x64.node)) { throw "better-sqlite3 Windows binary missing from the standalone build" }
           "App size: {0:N0} MB" -f ((Get-ChildItem -Recurse dist/app | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Build the launcher

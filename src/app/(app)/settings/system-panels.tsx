@@ -24,7 +24,7 @@ export function SystemPanels({ director }: { director: boolean }) {
   const [progress, setProgress] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const load = () => start(async () => { const r = await backupInfoAction(); if (r.ok) { setInfo(r.data); setFolder(r.data.cloudFolder ?? ""); } });
-  useEffect(() => { if (director) load(); }, [director]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (director) load(); }, [director]);
   const act = (fn: () => Promise<{ ok: boolean; error?: string }>, done: string) => start(async () => { const r = await fn(); if (!r.ok) toast.error((r as { error: string }).error); else { toast.success(done); load(); } });
 
   const exports = (
@@ -39,7 +39,8 @@ export function SystemPanels({ director }: { director: boolean }) {
     if (restore === "cloud") {
       const r = await restoreCloudAction(typed);
       if (!r.ok) { toast.error(r.error); return; }
-      toast.success(`Restored, with ${r.data.files} files.`); window.location.href = "/"; return;
+      // a full reload, so nothing from before the restore stays in the browser
+      toast.success(`Restored, with ${r.data.files} files.`); window.location.assign(new URL("/", window.location.href)); return;
     }
     if (!file) return;
     setProgress("Uploading and restoring… don't close this window.");
@@ -47,7 +48,7 @@ export function SystemPanels({ director }: { director: boolean }) {
     const j = await res.json().catch(() => ({ ok: false, error: "The restore didn't finish." }));
     setProgress("");
     if (!j.ok) { toast.error(j.error); return; }
-    toast.success(`Restored, with ${j.files} files.`); window.location.href = "/";
+    toast.success(`Restored, with ${j.files} files.`); window.location.assign(new URL("/", window.location.href));
   }
 
   return (

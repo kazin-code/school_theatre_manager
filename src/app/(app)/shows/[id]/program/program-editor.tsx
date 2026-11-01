@@ -46,7 +46,9 @@ export function ProgramEditor({ showId, ctx, saved, pictures, others, allSponsor
   const [rename, setRename] = useState<{ i: number; name: string } | null>(null);
   const [sponsor, setSponsor] = useState<{ s: Sponsor | null } | null>(null);
   const undo = useRef<string[]>([]), redo = useRef<string[]>([]);
-  const docRef = useRef(doc); docRef.current = doc;
+  const docRef = useRef(doc); // always the latest document; every update below sets it before calling setDoc
+  const [hist, setHist] = useState({ u: 0, r: 0 });
+  const syncHist = () => setHist({ u: undo.current.length, r: redo.current.length });
   const saveT = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typing = useRef<string | null>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -54,18 +56,21 @@ export function ProgramEditor({ showId, ctx, saved, pictures, others, allSponsor
   const [, startUpload] = useTransition();
 
   // ---- saving ----
-  const save = useCallback(async () => {
-    if (saveT.current) { clearTimeout(saveT.current); saveT.current = null; }
-    const r = await saveProgramAction(showId, docRef.current);
-    if (r.ok) setStatus("Saved");
-    else { setStatus("Not saved: will retry"); toast.error(r.error); saveT.current = setTimeout(save, 5000); }
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    saveRef.current = async () => {
+      if (saveT.current) { clearTimeout(saveT.current); saveT.current = null; }
+      const r = await saveProgramAction(showId, docRef.current);
+      if (r.ok) setStatus("Saved");
+      else { setStatus("Not saved: will retry"); toast.error(r.error); saveT.current = setTimeout(() => void saveRef.current(), 5000); }
+    };
   }, [showId]);
-  const scheduleSave = useCallback(() => { setStatus("Saving…"); if (saveT.current) clearTimeout(saveT.current); saveT.current = setTimeout(save, 700); }, [save]);
-  useEffect(() => { if (!saved) void save(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const flush = () => { if (saveT.current) void save(); }; window.addEventListener("beforeunload", flush); return () => { window.removeEventListener("beforeunload", flush); flush(); }; }, [save]);
+  const scheduleSave = useCallback(() => { setStatus("Saving…"); if (saveT.current) clearTimeout(saveT.current); saveT.current = setTimeout(() => void saveRef.current(), 700); }, []);
+  useEffect(() => { if (!saved) void saveRef.current(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const flush = () => { if (saveT.current) void saveRef.current(); }; window.addEventListener("beforeunload", flush); return () => { window.removeEventListener("beforeunload", flush); flush(); }; }, []);
 
   // ---- changes, undo & redo ----
-  const snapshot = () => { undo.current.push(JSON.stringify(docRef.current)); if (undo.current.length > 80) undo.current.shift(); redo.current = []; };
+  const snapshot = () => { undo.current.push(JSON.stringify(docRef.current)); if (undo.current.length > 80) undo.current.shift(); redo.current = []; syncHist(); };
   const change = (fn: (d: Doc) => void, opts: { refresh?: boolean } = {}) => {
     snapshot(); typing.current = null;
     const next = clone(docRef.current); fn(next); docRef.current = next; setDoc(next);
@@ -75,7 +80,7 @@ export function ProgramEditor({ showId, ctx, saved, pictures, others, allSponsor
   const restore = (from: React.RefObject<string[]>, to: React.RefObject<string[]>) => {
     const s = from.current.pop(); if (!s) return;
     to.current.push(JSON.stringify(docRef.current)); const d = JSON.parse(s) as Doc;
-    docRef.current = d; setDoc(d); setSel(null); setRev((r) => r + 1); scheduleSave();
+    docRef.current = d; setDoc(d); setSel(null); setRev((r) => r + 1); syncHist(); scheduleSave();
   };
   const doUndo = () => restore(undo, redo), doRedo = () => restore(redo, undo);
   useEffect(() => {
@@ -176,8 +181,8 @@ export function ProgramEditor({ showId, ctx, saved, pictures, others, allSponsor
       <div className="no-print flex flex-wrap items-center gap-2">
         {!saved && <p className="mr-auto max-w-2xl text-sm text-muted-foreground">A standard program filled in from the show. Click any text to change it, add or move blocks and pages, and pick a style. It saves as you go.</p>}
         <span className="ml-auto text-sm text-muted-foreground" aria-live="polite">{status}</span>
-        <Button variant="outline" size="sm" onClick={doUndo} disabled={!undo.current.length} title="Undo (Ctrl+Z)"><Undo2 />Undo</Button>
-        <Button variant="outline" size="sm" onClick={doRedo} disabled={!redo.current.length} title="Redo (Ctrl+Y)"><Redo2 />Redo</Button>
+        <Button variant="outline" size="sm" onClick={doUndo} disabled={!hist.u} title="Undo (Ctrl+Z)"><Undo2 />Undo</Button>
+        <Button variant="outline" size="sm" onClick={doRedo} disabled={!hist.r} title="Redo (Ctrl+Y)"><Redo2 />Redo</Button>
         <Button variant="outline" size="sm" onClick={() => setMore(true)}><MoreHorizontal />More</Button>
         <Button variant="outline" size="sm" onClick={() => setPrint("single")}><Printer />Print pages</Button>
         <Button size="sm" onClick={() => setPrint("booklet")}><Printer />Print as booklet</Button>

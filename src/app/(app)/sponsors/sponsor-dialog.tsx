@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -27,7 +27,9 @@ export function SponsorDialog({ open, sponsor, tiers, adSizes, canDelete, onClos
   const [removeLogo, setRemoveLogo] = useState(false);
   const blank: In = { name: "", tier: tiers[0] ?? "", adSize: adSizes.includes("Quarter page") ? "Quarter page" : adSizes[0] ?? "", message: "", website: "", contactName: "", email: "", phone: "", amount: "", notes: "", active: true };
   const form = useForm<In, unknown, Out>({ resolver: zodResolver(sponsorSchema), values: sponsor ? (Object.fromEntries(KEYS.map((k) => [k, sponsor[k] ?? (k === "active" ? false : "")])) as In) : blank });
-  useEffect(() => { if (open) { setLogo(null); setPreview(null); setRemoveLogo(false); } }, [open]);
+  // start each opening of the dialog without a picture picked
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) { setWasOpen(open); if (open) { setLogo(null); setPreview(null); setRemoveLogo(false); } }
   const current = preview ?? (!removeLogo && sponsor?.logo ? sponsorUrl(sponsor.logo) : null);
 
   async function onSubmit(v: Out) {

@@ -107,6 +107,8 @@ export function ItemsBrowser({ items, shows, lists }: { items: ItemRow[]; shows:
   return (
     <>
       <PageHeader eyebrow="Inventory" title="Find what you have" actions={<>
+        {/* a file download, not a page */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a href="/api/export/items" className={buttonVariants({ variant: "outline" })}><Download />Export spreadsheet</a>
         <Link href="/items/new" className={buttonVariants()}><Plus />Add an item</Link>
       </>} />
