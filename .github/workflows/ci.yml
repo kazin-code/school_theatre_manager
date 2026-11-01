@@ -14,4 +14,38 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm run build
+
+  # The server API, end to end, on both databases it supports.
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: theatre
+          POSTGRES_PASSWORD: Stage!2026
+          POSTGRES_DB: theatre
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U theatre" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run server:build
+      - name: API test on SQLite
+        run: |
+          STM_DATA_DIR=$RUNNER_TEMP/sqlite STM_MIGRATIONS=packages/core/drizzle PORT=8417 node apps/server/dist/server.cjs > $RUNNER_TEMP/sqlite.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8417/api/v1/ping && break; sleep 0.5; done
+          node apps/server/test/api-test.mjs http://127.0.0.1:8417 || { cat $RUNNER_TEMP/sqlite.log; exit 1; }
+          kill %1
+      - name: API test on PostgreSQL
+        run: |
+          STM_DATA_DIR=$RUNNER_TEMP/pg STM_MIGRATIONS=packages/core/drizzle STM_DATABASE_URL='postgres://theatre:Stage%212026@127.0.0.1:5432/theatre' PORT=8418 node apps/server/dist/server.cjs > $RUNNER_TEMP/pg.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8418/api/v1/ping && break; sleep 0.5; done
+          node apps/server/test/api-test.mjs http://127.0.0.1:8418 || { cat $RUNNER_TEMP/pg.log; exit 1; }

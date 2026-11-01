@@ -58,7 +58,11 @@ Nothing requires the internet.
 - [x] tweakcn theme
 - [x] School network groundwork (`apps/client/src/server/network.ts`, `/api/server-info`)
 - [x] Stage 1: split the repo (one root package.json; `@stm/core/*` alias; Next.js `turbopack.root` and `outputFileTracingRoot` at the repo root, so the standalone build keeps the layout: `apps/client/server.js`)
-- [ ] Stage 2: server API (SQLite, then PostgreSQL)
+- [x] Stage 2: server API (`apps/server`): Hono, every feature, SQLite and PostgreSQL. PostgreSQL schema is
+      generated from the SQLite one (`packages/core/scripts/make-pg-schema.mjs`); migrations in
+      `packages/core/drizzle/{sqlite,pg}`. Full backups carry `data.json`, so a backup restores on either
+      database (this is also how an offline computer's data moves to the school server).
+      `apps/server/test/api-test.mjs` runs end to end; CI runs it on both databases.
 - [ ] Stage 3: client on the API
 - [ ] Stage 4: packaging, intranet connect, IT guide
 

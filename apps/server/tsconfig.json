@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "incremental": false,
+    "lib": ["esnext"],
+    "types": ["node"],
+    "paths": { "@stm/core/*": ["../../packages/core/src/*"] }
+  },
+  "include": ["src/**/*.ts", "../../packages/core/src/**/*.ts"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@stm/server",
+  "private": true,
+  "description": "School Theatre Manager server (HTTP API). Built into one file with esbuild: npm run server:build",
+  "main": "dist/server.cjs"
+}

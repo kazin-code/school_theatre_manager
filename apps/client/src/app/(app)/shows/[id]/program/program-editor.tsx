@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/app/fields";
 import { cn } from "@/lib/utils";
-import { B, BLOCK_LABEL, BORDERS, defaultProgram, PAGE_TEMPLATES, PAPERS, PEOPLE_LABEL, PSIZES, PSTYLES, pageTemplate, sanitizeHtml, uid, type Block, type Ctx, type Doc, type Template } from "@/lib/program/model";
+import { B, BLOCK_LABEL, BORDERS, defaultProgram, PAGE_TEMPLATES, PAPERS, PEOPLE_LABEL, PSIZES, PSTYLES, pageTemplate, sanitizeHtml, uid, type Block, type Ctx, type Doc, type Template } from "@stm/core/program/model";
 import { BlockView, PageView, PrintSheets } from "@/lib/program/render";
 import { programToCopyAction, saveProgramAction } from "@/server/actions/programs";
 import { addShowFilesAction } from "@/server/actions/shows";

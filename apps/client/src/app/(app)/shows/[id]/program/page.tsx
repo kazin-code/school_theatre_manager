@@ -6,7 +6,7 @@ import { getProgram } from "@/server/queries/programs";
 import { listSponsors } from "@/server/queries/sponsors";
 import { getBranding, getLists } from "@/server/settings";
 import { PageHeader } from "@/components/app/page-header";
-import { docSchema, type Ctx } from "@/lib/program/model";
+import { docSchema, type Ctx } from "@stm/core/program/model";
 import { ProgramEditor } from "./program-editor";
 
 export const metadata = { title: "Program" };

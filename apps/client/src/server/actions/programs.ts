@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { programs, shows } from "@stm/core/db/schema";
-import { docSchema } from "@/lib/program/model";
+import { docSchema } from "@stm/core/program/model";
 import { actionUser, ActionError } from "../auth";
 import { changed, nowIso, run } from "../action";
 import { logActivity } from "../activity";

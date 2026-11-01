@@ -9,11 +9,12 @@ import { items, renters, rentals, showNumbers, showPeople, shows, sponsors, user
 import { passwordProblem, USERNAME_RE } from "../auth/password";
 
 // ---- field helpers: forms hold strings; the database wants null for "not filled in" ----
+// (each starts with .optional() so a field can also be left out entirely, e.g. by an API caller)
 export const optText = (max = 500) =>
-  z.union([z.string(), z.null(), z.undefined()]).transform((v) => (v ?? "").trim() || null).pipe(z.string().max(max, `Keep this under ${max} characters.`).nullable());
+  z.union([z.string(), z.null()]).optional().transform((v) => (v ?? "").trim() || null).pipe(z.string().max(max, `Keep this under ${max} characters.`).nullable());
 export const reqText = (msg: string, max = 200) => z.string().trim().min(1, msg).max(max, `Keep this under ${max} characters.`);
 export const optNumber = (opts: { min?: number; max?: number; int?: boolean; label?: string } = {}) =>
-  z.union([z.number(), z.string(), z.null(), z.undefined()]).transform((v, ctx) => {
+  z.union([z.number(), z.string(), z.null()]).optional().transform((v, ctx) => {
     if (v === "" || v == null || (typeof v === "number" && Number.isNaN(v))) return null;
     const n = Number(v), min = opts.min ?? 0, max = opts.max ?? 10_000_000;
     if (!Number.isFinite(n) || n < min || n > max || (opts.int && !Number.isInteger(n))) {
@@ -23,7 +24,7 @@ export const optNumber = (opts: { min?: number; max?: number; int?: boolean; lab
     return n;
   });
 export const optDate = () =>
-  z.union([z.string(), z.null(), z.undefined()]).transform((v) => (v ?? "").trim() || null).pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-31.").nullable());
+  z.union([z.string(), z.null()]).optional().transform((v) => (v ?? "").trim() || null).pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-31.").nullable());
 const condition = z.coerce.number().int().min(1, "Choose a condition from 1 to 5.").max(5, "Choose a condition from 1 to 5.");
 
 // ---------- inventory ----------

@@ -1,7 +1,7 @@
 import "server-only";
 import dgram from "node:dgram";
 import os from "node:os";
-import { APP_ID, APP_VERSION, DEFAULT_PORT, DISCOVERY_PORT, SERVER_HOSTNAME } from "@/lib/version";
+import { APP_ID, APP_VERSION, DEFAULT_PORT, DISCOVERY_PORT, SERVER_HOSTNAME } from "@stm/core/version";
 import { dataDir } from "./paths";
 import { exists, pjoin, readText, writeFile } from "./fsx";
 

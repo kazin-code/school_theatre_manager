@@ -1,6 +1,6 @@
 "use client";
 import { memo, type CSSProperties, type ReactNode } from "react";
-import { creditLines, HSIZES, PAPERS, PEOPLE_LABEL, PSIZES, PSTYLES, runLine, TSIZES, type Block, type Ctx, type Doc, type Page } from "./model";
+import { creditLines, HSIZES, PAPERS, PEOPLE_LABEL, PSIZES, PSTYLES, runLine, TSIZES, type Block, type Ctx, type Doc, type Page } from "@stm/core/program/model";
 import { showFileUrl, sponsorUrl } from "@/lib/urls";
 
 export function pageStyle(doc: Doc, ctx: Ctx): CSSProperties {
