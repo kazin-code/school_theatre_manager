@@ -47,7 +47,11 @@ switch ($Action) {
     # the data folder holds the database password (server.json) and every backup:
     # only administrators and the server itself (SYSTEM) may open it
     New-Item -ItemType Directory -Force $DataDir, (Join-Path $DataDir "logs") | Out-Null
-    & icacls $DataDir /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /T /C /Q | Out-Null
+    # (the folder gets the rule; everything inside inherits it)
+    & icacls $DataDir /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /C /Q
+    if ($LASTEXITCODE) { throw "Couldn't set the permissions of $DataDir" }
+    & icacls (Join-Path $DataDir "*") /reset /T /C /Q
+    if ($LASTEXITCODE) { throw "Couldn't set the permissions inside $DataDir" }
     $act = New-ScheduledTaskAction -Execute $node -Argument "`"$server`" --data `"$DataDir`" --log `"$log`"" -WorkingDirectory (Join-Path $InstallDir "app")
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
