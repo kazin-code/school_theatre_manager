@@ -1,4 +1,5 @@
 "use server";
+import { writeBrandingIni } from "../branding-ini";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { lookups, sessions, users } from "@/db/schema";
@@ -17,7 +18,9 @@ import { list, remove, writeFile, pjoin } from "../fsx";
 export async function saveBrandingAction(input: unknown) {
   return run(async () => {
     const me = await actionUser("director");
-    writeSetting("branding", brandingSchema.parse(input));
+    const b = brandingSchema.parse(input);
+    writeSetting("branding", b);
+    writeBrandingIni(b);
     logActivity(me.displayName, "settings", "Updated school branding");
     changed(T.settings);
   });

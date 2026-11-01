@@ -1,0 +1,123 @@
+name: Windows installer
+
+# Builds School-Theatre-Manager-Setup.exe on Windows: the Next.js app (standalone), the matching
+# Node.js runtime, the setup tool and the launcher, packed with NSIS. The installer is smoke-tested
+# (the app is started from the packed files and must answer), uploaded as an artifact, and copied
+# into installer/ on the branch so non-technical users can download it from GitHub.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths-ignore: ["installer/School-Theatre-Manager-Setup.exe", "**/*.md"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install packages
+        run: npm ci
+
+      - name: Type-check and build
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Assemble the app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force dist/app, dist/node | Out-Null
+          Copy-Item -Recurse -Force .next/standalone/* dist/app/
+          Copy-Item -Recurse -Force .next/static dist/app/.next/static
+          Copy-Item -Recurse -Force public dist/app/public
+          Copy-Item -Recurse -Force drizzle dist/app/drizzle
+          Copy-Item tools/start.cjs dist/app/start.cjs
+          if (Test-Path dist/app/data) { Remove-Item -Recurse -Force dist/app/data }
+          npx esbuild tools/stm-tool.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/app/tools/stm-tool.cjs --external:better-sqlite3 --alias:server-only=./tools/empty.js --log-level=warning
+          if ($LASTEXITCODE) { throw "esbuild failed" }
+          # the same Node.js the app was built and its native modules were installed with
+          Copy-Item (Get-Command node).Source dist/node/node.exe
+          node -p "process.version" | Out-File dist/node/VERSION.txt
+          $nb = (Get-ChildItem -Recurse dist/app/node_modules -Filter better_sqlite3.node | Select-Object -First 1)
+          if (-not $nb) { throw "better-sqlite3 native module missing from the standalone build" }
+          "better-sqlite3: $($nb.FullName)"
+          "App size: {0:N0} MB" -f ((Get-ChildItem -Recurse dist/app | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Build the launcher
+        shell: pwsh
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /optimize+ /out:dist\SchoolTheatre.exe /win32icon:installer\app.ico /win32manifest:installer\launcher\app.manifest /r:System.Drawing.dll /r:System.Windows.Forms.dll installer\launcher\Launcher.cs
+          if ($LASTEXITCODE) { throw "launcher build failed" }
+
+      - name: Smoke test (setup tool, logo, server)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $data = "$env:RUNNER_TEMP\stm-data"
+          $env:STM_SCHOOL = "Test High School"; $env:STM_PROGRAM = "Test Theatre"
+          $env:STM_ADMIN_USER = "director"; $env:STM_ADMIN_NAME = "Test Director"; $env:STM_ADMIN_PASS = "Curtain2026!"
+          $env:STM_MIGRATIONS = "$PWD\dist\app\drizzle"
+          $p = Start-Process -FilePath dist\SchoolTheatre.exe -ArgumentList "--prepare-logo", "`"$PWD\public\stage-logo.png`"", "`"$data\branding`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "prepare-logo failed: $($p.ExitCode)" }
+          if (-not (Test-Path "$data\branding\logo.ico")) { throw "logo.ico missing" }
+          & dist\node\node.exe dist\app\tools\stm-tool.cjs init --data $data
+          if ($LASTEXITCODE) { throw "setup tool failed: $LASTEXITCODE" }
+          $env:STM_DATA_DIR = $data; $env:PORT = "8417"; $env:HOSTNAME = "127.0.0.1"
+          $server = Start-Process -FilePath dist\node\node.exe -ArgumentList "start.cjs" -WorkingDirectory dist\app -PassThru -WindowStyle Hidden
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8417/api/ping; if ($r.Content -match "school-theatre-manager") { $ok = $true; break } } catch {} }
+          if (-not $ok) { Get-Content "$data\logs\server.log" -ErrorAction SilentlyContinue; throw "server did not start" }
+          $login = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8417/login
+          if ($login.Content -notmatch "Test Theatre") { throw "branding not applied" }
+          $logo = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8417/api/branding/logo
+          if ($logo.StatusCode -ne 200) { throw "logo route failed" }
+          "Smoke test passed"
+          Stop-Process -Id $server.Id -Force
+          Get-Content "$data\logs\server.log"
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { choco install nsis -y --no-progress | Out-Null }
+          & $makensis /V2 /DVERSION=$env:VERSION installer\school-theatre.nsi
+          if ($LASTEXITCODE) { throw "makensis failed" }
+          "Installer: {0:N1} MB" -f ((Get-Item dist\School-Theatre-Manager-Setup.exe).Length / 1MB)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: School-Theatre-Manager-Setup
+          path: dist/School-Theatre-Manager-Setup.exe
+
+      - name: Put the installer in installer/
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          Copy-Item dist\School-Theatre-Manager-Setup.exe installer\School-Theatre-Manager-Setup.exe -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add installer/School-Theatre-Manager-Setup.exe
+          git commit -m "Build installer ${{ env.VERSION }} from ${{ github.sha }}"
+          git pull --rebase origin ${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
