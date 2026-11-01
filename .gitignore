@@ -1,12 +1,17 @@
-# build output
-dist/
-*.exe
-*.syso
-# local test data
-data/
-*.db
-*.db-wal
-*.db-shm
-
-# the ready-to-run installer for non-technical users is kept in the repo (installer/)
-!installer/School-Theatre-Manager-Setup.exe
+# dependencies
+/node_modules
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+# local data created by `npm run dev`
+/data/
+# build output (installer is built by GitHub Actions)
+/dist/
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+.env*.local
+.vercel
