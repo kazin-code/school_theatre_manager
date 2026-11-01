@@ -90,7 +90,7 @@ async function Content({ params }: { params: PageProps<"/items/[id]">["params"] 
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Condition history</CardTitle></CardHeader><CardContent>
           <ol className="grid gap-3">{d.conditions.map((c) => (
-            <li key={c.id} className="grid grid-cols-[auto_1fr] gap-3 text-sm">
+            <li key={c.id} className="grid grid-cols-[120px_1fr] gap-3 text-sm">
               <Condition value={c.condition} />
               <div><span className="font-medium">{c.source}</span><div className="text-xs text-muted-foreground">{fmtWhen(c.at)}{c.user ? ` · ${c.user}` : ""}</div>{c.notes && <div className="mt-0.5">{c.notes}</div>}</div>
             </li>))}</ol>
