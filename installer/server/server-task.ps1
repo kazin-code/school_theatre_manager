@@ -6,12 +6,14 @@
 #   server-task.ps1 uninstall                              stop it and remove the task and firewall rules
 param(
   [Parameter(Mandatory = $true)][ValidateSet("install", "uninstall", "start", "stop", "restart")][string]$Action,
-  [string]$InstallDir = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+  [string]$InstallDir = "",
   [string]$DataDir = (Join-Path $env:ProgramData "School Theatre Manager Server"),
   [int]$Port = 8417,
   [switch]$NoFirewall
 )
 $ErrorActionPreference = "Stop"
+# this script is in <install folder>\app\tools (Windows PowerShell 5.1 has no $PSScriptRoot in param defaults)
+if (-not $InstallDir) { $InstallDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)) }
 $TaskName = "School Theatre Manager Server"
 $node = Join-Path $InstallDir "node\node.exe"
 $server = Join-Path $InstallDir "app\server\server.cjs"
