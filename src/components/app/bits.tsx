@@ -50,3 +50,10 @@ export function Thumb({ file, className, alt = "" }: { file?: string | null; cla
 export function Empty({ children }: { children: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">{children}</div>;
 }
+
+/** 1–5 stars, read-only. */
+export function Stars({ value, className }: { value?: number | null; className?: string }) {
+  if (value == null) return <span className={cn("text-xs text-muted-foreground", className)}>Not rated</span>;
+  const full = Math.round(value);
+  return <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", className)} title={`${value} of 5`} aria-label={`${value} of 5 stars`}><span className="tracking-tight text-amber-500" aria-hidden>{"★".repeat(full)}<span className="text-muted-foreground/30">{"★".repeat(5 - full)}</span></span><span className="text-xs text-muted-foreground tabular">{value}</span></span>;
+}

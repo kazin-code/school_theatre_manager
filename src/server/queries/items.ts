@@ -27,7 +27,8 @@ export async function listItems() {
     id: items.id, tag: items.tag, name: items.name, category: items.category, subcategory: items.subcategory, era: items.era, gender: items.gender,
     size: items.size, chest: items.chest, waist: items.waist, hips: items.hips, inseam: items.inseam, color: items.color, material: items.material,
     quantity: items.quantity, condition: items.condition, location: items.location, rentable: items.rentable, status: items.status,
-    keywords: items.keywords, description: items.description, notes: items.notes, mainPhoto: items.mainPhoto, createdAt: items.createdAt, ...usage,
+    keywords: items.keywords, description: items.description, notes: items.notes, mainPhoto: items.mainPhoto, createdAt: items.createdAt,
+    rentalRate: items.rentalRate, replacementValue: items.replacementValue, ...usage,
   }).from(items).orderBy(asc(items.name)).all();
 }
 export type ItemRow = Awaited<ReturnType<typeof listItems>>[number];

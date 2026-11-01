@@ -1,5 +1,5 @@
 "use server";
-import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, eq, isNull, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { conditionLog, items, showFiles, showItems, showNumbers, showPeople, shows, PEOPLE_KINDS, SHOW_FILE_KINDS, SHOW_STATUSES } from "@/db/schema";
@@ -12,6 +12,7 @@ import { dir, filePath } from "../paths";
 import { copy, exists, mkdirp, pjoin, remove, rename } from "../fsx";
 import { saveDocument, savePhoto } from "../uploads";
 import { safetySnapshot } from "../snapshot";
+import { requireAvailable } from "../availability";
 
 const showOrThrow = (id: number) => {
   const s = db().select().from(shows).where(eq(shows.id, id)).get();
@@ -245,20 +246,7 @@ export async function checkoutAction(showId: number, input: unknown) {
     if (s.status === "past") throw new ActionError("This show is in past shows. Reopen it before checking items out.");
     const v = checkoutSchema.parse(input);
     const ids = [...new Set(v.lines.map((l) => l.itemId))];
-    const avail = new Map(db().select({
-      id: items.id, tag: items.tag, name: items.name, quantity: items.quantity, status: items.status, condition: items.condition,
-      out: sql<number>`(SELECT COALESCE(SUM(qty),0) FROM show_items si WHERE si.item_id=${sql.raw(`"items"."id"`)} AND si.date_returned IS NULL) + (SELECT COALESCE(SUM(ri.qty),0) FROM rental_items ri JOIN rentals r ON r.id=ri.rental_id WHERE ri.item_id=${sql.raw(`"items"."id"`)} AND r.status='out')`,
-    }).from(items).where(inArray(items.id, ids)).all().map((r) => [r.id, r]));
-    const want = new Map<number, number>();
-    for (const l of v.lines) want.set(l.itemId, (want.get(l.itemId) ?? 0) + l.qty);
-    const problems: string[] = [];
-    for (const [id, qty] of want) {
-      const it = avail.get(id);
-      if (!it) { problems.push(`Item #${id} no longer exists.`); continue; }
-      if (it.status === "retired" || it.status === "lost") problems.push(`${it.tag} ${it.name} is ${it.status}.`);
-      else if (qty > it.quantity - it.out) problems.push(`${it.tag} ${it.name}: only ${Math.max(0, it.quantity - it.out)} of ${it.quantity} available.`);
-    }
-    if (problems.length) throw new ActionError(problems.join(" "));
+    const avail = requireAvailable(v.lines);
     db().transaction((tx) => {
       for (const l of v.lines) tx.insert(showItems).values({ showId, itemId: l.itemId, qty: l.qty, character: l.character, actor: l.actor, scene: l.scene, usageNotes: l.usageNotes,
         dateOut: v.dateOut, conditionOut: avail.get(l.itemId)!.condition, createdBy: me.displayName }).run();
