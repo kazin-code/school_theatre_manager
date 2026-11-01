@@ -2,7 +2,8 @@
 // Starts the program for the Windows launcher: the private server (data, files, backups) on a free
 // port that only this computer can reach, then the screens (Next.js) that talk to it. Output goes to
 // <data>\logs\server.log and the process id to <data>\server.pid, so the launcher can find and stop it.
-// If STM_API_URL is already set (a school server), only the screens start.
+// The private server always runs, so the computer can work offline even when it is connected to the
+// school's server. If STM_API_URL is set (the screens hosted next to a school server), only the screens start.
 const fs = require("fs");
 const path = require("path");
 const data = process.env.STM_DATA_DIR;
@@ -25,7 +26,7 @@ process.on("exit", () => { try { if (fs.readFileSync(path.join(data, "server.pid
     const w = new Worker(path.join(__dirname, "server", "server.cjs"), { workerData: { stmEmbedded: true, overrides: { host: "127.0.0.1", port: 0 } } });
     w.on("error", fail);
     w.on("exit", (code) => fail(new Error(`The private server stopped (code ${code}).`)));
-    process.env.STM_API_URL = await new Promise((resolve) => w.once("message", (m) => resolve(m.url)));
+    process.env.STM_LOCAL_API_URL = await new Promise((resolve) => w.once("message", (m) => resolve(m.url)));
   }
   // the screens live in apps/client inside the packed folder (the repository layout is kept)
   require(path.join(__dirname, "apps", "client", "server.js"));

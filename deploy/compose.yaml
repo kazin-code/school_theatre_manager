@@ -1,0 +1,37 @@
+# School Theatre Manager on a school server, with Docker Compose.
+#
+#   1. Put the database settings in deploy/.env (see .env.example). The database lives on the
+#      school's PostgreSQL server, not in a container here.
+#   2. docker compose -f deploy/compose.yaml up -d --build
+#   3. Browsers on the school network: http://<this server>:8080
+#      Classroom computers with the Windows app: connect to http://<this server>:8417
+#
+# Full instructions: docs/INTRANET-SETUP.md
+
+services:
+  server:
+    build: { context: .., target: server }
+    image: school-theatre-server
+    restart: unless-stopped
+    environment:
+      STM_DATABASE_URL: ${STM_DATABASE_URL:?set STM_DATABASE_URL in deploy/.env}
+      STM_DATABASE_SSL: ${STM_DATABASE_SSL:-}
+    volumes:
+      - stm-files:/data            # photos, show files, backups (or a bind mount to a share IT backs up)
+    ports:
+      - "8417:8417"                # the API, for classroom computers running the Windows app
+    # To let classroom computers *find* the server automatically (UDP 8418 broadcasts), use
+    # host networking instead of the ports above: network_mode: host
+
+  web:
+    build: { context: .., target: web }
+    image: school-theatre-web
+    restart: unless-stopped
+    environment:
+      STM_API_URL: http://server:8417
+    depends_on: [server]
+    ports:
+      - "8080:3000"                # the screens, for any browser on the school network
+
+volumes:
+  stm-files:

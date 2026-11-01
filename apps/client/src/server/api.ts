@@ -2,14 +2,24 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { ApiErrorBody } from "@stm/server/types";
+import { readNetConfig } from "./network";
 
 /**
- * The screens talk to the School Theatre Manager server for everything. Offline, that server runs
- * privately inside this program (see tools/start.cjs); on a school network it can be another
- * computer. STM_API_URL says where it is.
+ * Where the data is. The screens talk to a School Theatre Manager server for everything:
+ *  - STM_API_URL: always this server (the screens hosted on a school server, e.g. in Docker)
+ *  - otherwise the school's server this computer was connected to (config.json "server"),
+ *  - otherwise this computer's own private server (STM_LOCAL_API_URL, started by tools/start.cjs).
  */
-export function apiBase(): string {
-  const u = process.env.STM_API_URL;
+export type Where = { kind: "fixed" | "school" | "local"; url: string | null };
+export function where(): Where {
+  if (process.env.STM_API_URL) return { kind: "fixed", url: process.env.STM_API_URL };
+  const school = readNetConfig().server;
+  if (school) return { kind: "school", url: school };
+  return { kind: "local", url: process.env.STM_LOCAL_API_URL ?? null };
+}
+
+export function apiBase(base?: string): string {
+  const u = base ?? where().url;
   if (!u) throw new ApiFail(503, "The app's server isn't running. Close the app and open it again.");
   return u.replace(/\/+$/, "") + "/api/v1";
 }
@@ -34,6 +44,10 @@ type Opts = {
   headers?: Record<string, string>;
   /** Defaults to the request's session cookie. Pass it in from cached functions, which can't read cookies. */
   token?: string | null;
+  /** Another server than the current one (e.g. this computer's own, while connected to the school's). */
+  base?: string;
+  /** Give up after this long (for checks; normal requests wait). */
+  timeoutMs?: number;
 };
 
 const UNREACHABLE = "Can't reach the School Theatre Manager server. If it runs on another computer, check that it is on and connected to the school network.";
@@ -46,13 +60,14 @@ export async function apiRaw(path: string, o: Opts = {}): Promise<Response> {
   let body: BodyInit | ReadableStream | undefined = o.body;
   if (o.json !== undefined) { headers["content-type"] = "application/json"; body = JSON.stringify(o.json); }
   else if (o.form) body = o.form;
-  const init: RequestInit & { duplex?: "half" } = { method: o.method ?? (body !== undefined ? "POST" : "GET"), headers, body: body as BodyInit, cache: "no-store" };
+  const init: RequestInit & { duplex?: "half" } = { method: o.method ?? (body !== undefined ? "POST" : "GET"), headers, body: body as BodyInit, cache: "no-store",
+    ...(o.timeoutMs ? { signal: AbortSignal.timeout(o.timeoutMs) } : {}) };
   if (body instanceof ReadableStream) init.duplex = "half";
   try {
-    return await fetch(apiBase() + path, init);
+    return await fetch(apiBase(o.base) + path, init);
   } catch (e) {
     if (e instanceof ApiFail) throw e;
-    throw new ApiFail(503, UNREACHABLE);
+    throw new ApiFail(503, o.base || where().kind !== "local" ? UNREACHABLE : "The app's own server isn't answering. Close the app and open it again.");
   }
 }
 
@@ -69,8 +84,9 @@ export async function api<T = { ok: true }>(path: string, o: Opts = {}): Promise
  * their keys, so they never show stale data. Asked once per request.
  */
 export const revision = cache(async (): Promise<string> => {
-  try { return (await api<{ revision: string }>("/revision", { token: null })).revision; } catch { return String(Date.now()); }
+  const w = where();
+  try { return `${w.url}|${(await api<{ revision: string }>("/revision", { token: null })).revision}`; } catch { return String(Date.now()); }
 });
 
-/** What a cached read needs as arguments: who is asking and how fresh the data is. */
+/** What a cached read needs as arguments: who is asking and how fresh the data is (on which server). */
 export const cacheKey = cache(async () => ({ token: (await sessionToken()) ?? "", rev: await revision() }));

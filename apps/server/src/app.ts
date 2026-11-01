@@ -41,7 +41,9 @@ export const revision = () => `${boot}.${changes}`;
 
 // ---------- plumbing ----------
 api.use("*", secureHeaders({ crossOriginResourcePolicy: "same-site" }));
-api.use("*", bodyLimit({ maxSize: 260 * 1024 * 1024, onError: (c) => c.json({ error: "That upload is too large (the limit is 250 MB)." }, 413) }));
+const uploadLimit = bodyLimit({ maxSize: 260 * 1024 * 1024, onError: (c) => c.json({ error: "That upload is too large (the limit is 250 MB)." }, 413) });
+// a backup being restored streams straight to disk, so it can be any size
+api.use("*", (c, next) => (c.req.path.endsWith("/backups/restore") ? next() : uploadLimit(c, next)));
 api.use("*", async (c, next) => {
   const h = c.req.header("authorization");
   const token = h?.startsWith("Bearer ") ? h.slice(7).trim() : null;

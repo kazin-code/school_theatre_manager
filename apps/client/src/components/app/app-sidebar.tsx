@@ -28,7 +28,10 @@ const MORE = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export function AppSidebar({ user, brand }: { user: SessionUser; brand: BrandInfo }) {
+/** "School server" or "This computer": where the records shown come from. */
+export type Place = { school: boolean; name: string | null };
+
+export function AppSidebar({ user, brand, place }: { user: SessionUser; brand: BrandInfo; place: Place }) {
   const path = usePathname();
   const pull = usePullList();
   const active = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
@@ -60,6 +63,8 @@ export function AppSidebar({ user, brand }: { user: SessionUser; brand: BrandInf
           <div className="min-w-0 flex-1 text-sm leading-tight">
             <div className="truncate font-medium">{user.displayName}</div>
             <div className="text-xs text-muted-foreground">{user.role === "director" ? "Director" : "Assistant"}</div>
+            <Link href="/settings?tab=network" className="block truncate text-xs text-muted-foreground hover:underline" title="Where your records are">
+              {place.school ? `School server${place.name ? `: ${place.name}` : ""}` : "This computer only"}</Link>
           </div>
           <ThemeToggle />
           <form action={logoutAction}><Button type="submit" variant="ghost" size="icon-sm" aria-label="Sign out" title="Sign out"><LogOut /></Button></form>

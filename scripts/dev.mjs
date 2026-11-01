@@ -24,7 +24,7 @@ const ctx = await context({
 await ctx.rebuild();
 if (mode === "dev") await ctx.watch();
 
-const next = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), mode, "apps/client"], { cwd: root, env: { ...env, STM_API_URL: `http://127.0.0.1:${port}` }, stdio: "inherit" });
+const next = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), mode, "apps/client"], { cwd: root, env: { ...env, STM_LOCAL_API_URL: `http://127.0.0.1:${port}` }, stdio: "inherit" });
 const stop = () => { api?.kill(); next.kill(); ctx.dispose(); };
 next.on("exit", (code) => { stop(); process.exit(code ?? 0); });
 for (const s of ["SIGINT", "SIGTERM"]) process.on(s, stop);

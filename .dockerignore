@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+**/dist
+**/data
+.git
+installer/*.exe
+*.md
+!apps/server/README.md

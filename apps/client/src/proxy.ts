@@ -12,5 +12,10 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|setup|change-password|api/ping|api/server-info|api/branding|_next/|fonts/|stage-logo\\.png|favicon).*)"],
+  matcher: [{
+    source: "/((?!login|setup|change-password|connect|help/|api/ping|api/server-info|api/branding|api/backup/restore|_next/|fonts/|stage-logo\\.png|favicon).*)",
+    // Not for Server Actions or the backup upload: the proxy keeps only the first 10 MB of a request
+    // body, and photos, show files and backups can be much larger. Those check the session themselves.
+    missing: [{ type: "header", key: "next-action" }],
+  }],
 };

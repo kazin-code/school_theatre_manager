@@ -18,3 +18,6 @@ apps/server/dist/
 npm-debug.log*
 .env*.local
 .vercel
+
+# Docker Compose settings with the database password
+deploy/.env

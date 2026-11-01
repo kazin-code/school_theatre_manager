@@ -49,3 +49,33 @@ jobs:
           STM_DATA_DIR=$RUNNER_TEMP/pg STM_MIGRATIONS=packages/core/drizzle STM_DATABASE_URL='postgres://theatre:Stage%212026@127.0.0.1:5432/theatre' PORT=8418 node apps/server/dist/server.cjs > $RUNNER_TEMP/pg.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8418/api/v1/ping && break; sleep 0.5; done
           node apps/server/test/api-test.mjs http://127.0.0.1:8418 || { cat $RUNNER_TEMP/pg.log; exit 1; }
+
+  # The Docker images (server API and screens) against PostgreSQL, the way a school would run them.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the images
+        run: |
+          docker build --target server -t school-theatre-server .
+          docker build --target web -t school-theatre-web .
+          docker images | grep school-theatre
+      - name: Run them with PostgreSQL
+        run: |
+          docker network create stm
+          docker run -d --network stm --name db -e POSTGRES_USER=theatre -e POSTGRES_PASSWORD='Stage!2026' -e POSTGRES_DB=theatre postgres:16
+          for i in $(seq 1 60); do docker exec db pg_isready -U theatre && break; sleep 1; done
+          docker run -d --network stm --name server -p 8417:8417 -e STM_DATABASE_URL='postgres://theatre:Stage%212026@db:5432/theatre' school-theatre-server
+          docker run -d --network stm --name web -p 8080:3000 -e STM_API_URL=http://server:8417 school-theatre-web
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8417/api/v1/ping && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/api/ping && break; sleep 1; done
+      - name: API test on the server container
+        run: node apps/server/test/api-test.mjs http://127.0.0.1:8417 || { docker logs server; exit 1; }
+      - name: The screens reach the server
+        run: |
+          curl -sf http://127.0.0.1:8080/api/server-info | tee /dev/stderr | grep -q postgresql
+          curl -sf http://127.0.0.1:8080/login | grep -q "Sign in" || { docker logs web; exit 1; }
+          docker exec server node stm-tool.cjs reset-password --data /data < /dev/null | grep -q "temporary password"

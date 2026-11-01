@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { currentUser, setupNeeded } from "@/server/auth";
 import { AuthFrame } from "../auth-frame";
+import { reachOrExplain } from "../reach";
+import { where } from "@/server/api";
+import { readNetConfig } from "@/server/network";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Sign in" };
@@ -13,7 +16,10 @@ export default function Page() {
 
 async function Gate() {
   await connection();
+  const down = await reachOrExplain();
+  if (down) return down;
   if (await setupNeeded()) redirect("/setup");
   if (await currentUser()) redirect("/");
-  return <AuthFrame><LoginForm /></AuthFrame>;
+  const w = where();
+  return <AuthFrame><LoginForm school={w.kind === "school" ? readNetConfig().serverName ?? "the school's server" : null} /></AuthFrame>;
 }

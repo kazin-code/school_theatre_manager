@@ -6,11 +6,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * School network ("intranet") mode. Every computer works offline on its own data by default.
- * One computer can be the school's server (network: true); other computers can find it on the
- * school network and connect (server: "http://…"). Nothing here uses the internet.
+ * School network ("intranet") mode. Every computer works offline on its own records by default.
+ * It can find the school's School Theatre Manager server on the school network and connect to it
+ * (config.json "server": "http://…"); its own records stay on the computer, separately, for when it
+ * works offline again. Nothing here uses the internet.
  */
-export type NetConfig = { port: number; network: boolean; server: string | null };
+export type NetConfig = { port: number; network: boolean; server: string | null; serverName: string | null };
 /** This computer's data folder (the launcher sets STM_DATA_DIR). */
 function dataDir(): string {
   if (process.env.STM_DATA_DIR) return process.env.STM_DATA_DIR;
@@ -19,15 +20,24 @@ function dataDir(): string {
 }
 const file = () => path.join(dataDir(), "config.json");
 const exists = (p: string) => fs.existsSync(/*turbopackIgnore: true*/ p);
+// read on every request, so it is kept in memory and re-read only when the file changes
+let memo: { mtime: number; c: NetConfig } | null = null;
 export function readNetConfig(): NetConfig {
+  let mtime = 0;
+  try { mtime = fs.statSync(/*turbopackIgnore: true*/ file()).mtimeMs; } catch {}
+  if (memo && memo.mtime === mtime) return memo.c;
   let c: Partial<NetConfig> = {};
-  try { if (exists(file())) c = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file(), "utf8")); } catch {}
-  return { port: Number(c.port) || DEFAULT_PORT, network: !!c.network, server: typeof c.server === "string" && c.server ? c.server : null };
+  try { if (mtime) c = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file(), "utf8")); } catch {}
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  memo = { mtime, c: { port: Number(c.port) || DEFAULT_PORT, network: !!c.network, server: str(c.server), serverName: str(c.serverName) } };
+  return memo.c;
 }
 export function writeNetConfig(patch: Partial<NetConfig>) {
   let raw: Record<string, unknown> = {};
   try { if (exists(file())) raw = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file(), "utf8")); } catch {}
+  fs.mkdirSync(/*turbopackIgnore: true*/ dataDir(), { recursive: true });
   fs.writeFileSync(/*turbopackIgnore: true*/ file(), JSON.stringify({ ...raw, ...readNetConfig(), ...patch }, null, 2));
+  memo = null;
 }
 
 export type ServerInfo = { app: string; version: string; name: string; school: string | null; url: string };
@@ -86,13 +96,16 @@ export async function discover(waitMs = 1800): Promise<ServerInfo[]> {
     sock.bind(0, () => {
       sock.setBroadcast(true);
       const probe = Buffer.from(JSON.stringify({ app: APP_ID, ask: "where" }));
-      for (const b of broadcastAddresses()) sock.send(probe, DISCOVERY_PORT, b, () => {});
+      // everyone on the school network, and this computer itself (a server installed here)
+      for (const b of [...broadcastAddresses(), "127.0.0.1"]) sock.send(probe, DISCOVERY_PORT, b, () => {});
       setTimeout(done, waitMs);
     });
   });
   const byName = checkServer(normalizeUrl(SERVER_HOSTNAME)!, waitMs).then((s) => { if (s && ![...found.values()].some((f) => f.name === s.name && f.school === s.school)) found.set(s.url, s); });
   await Promise.all([replies, byName]);
   // confirm each answer over HTTP (the address must actually serve the app)
-  const checked = await Promise.all([...found.values()].map(async (f) => ((await checkServer(f.url)) ? f : null)));
-  return checked.filter((x): x is ServerInfo => !!x);
+  const checked = (await Promise.all([...found.values()].map(async (f) => ((await checkServer(f.url)) ? f : null)))).filter((x): x is ServerInfo => !!x);
+  // one server can answer on several addresses: list it once, by the address other computers can use too
+  const lan = checked.filter((f) => !f.url.includes("//127.0.0.1"));
+  return [...lan, ...checked.filter((f) => f.url.includes("//127.0.0.1") && !lan.some((l) => l.name === f.name && l.school === f.school))];
 }

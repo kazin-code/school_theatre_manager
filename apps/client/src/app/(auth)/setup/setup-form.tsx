@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +10,7 @@ import { setupSchema } from "@stm/core/db/validation";
 import { setupAction } from "@/server/actions/auth";
 import { applyResult } from "@/lib/forms";
 
-export function SetupForm() {
+export function SetupForm({ canConnect }: { canConnect: boolean }) {
   const router = useRouter();
   const form = useForm({ resolver: zodResolver(setupSchema), defaultValues: { displayName: "", username: "", password: "", confirm: "" } });
   const onSubmit = form.handleSubmit(async (v) => {
@@ -28,6 +29,7 @@ export function SetupForm() {
         </div>
         <TextField name="confirm" label="Confirm password" type="password" autoComplete="new-password" />
         <Button type="submit" size="lg" disabled={form.formState.isSubmitting}>Create account</Button>
+        {canConnect && <p className="text-sm text-muted-foreground">Does your school run a School Theatre Manager server? <Link href="/connect" className="text-link underline">Connect to it instead</Link> to share records with other computers.</p>}
       </form>
     </FormProvider>
   );
